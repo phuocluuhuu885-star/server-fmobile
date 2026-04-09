@@ -2,6 +2,7 @@ const orderModel = require("../models/Orders");
 const optionModel = require("../models/Option");
 const productModel = require("../models/Products");
 const { sendNotification } = require('../config/Fcm');
+const infoModel = require("../models/Info");
 const config = {
 	app_id: "2555",
 	key2: "trMrHtvjo6myautx6ujYwSv0Yra79trW",
@@ -336,6 +337,87 @@ const updateOrderStatus = async (req, res, next) => {
 		return res.status(500).json({ code: 500, message: error.message });
 	}
 };
+const updateOrder = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    const {
+      status,
+      shipper_id,
+      payment_status,
+      payment_method,
+      delivery_method,
+      ip,
+      info_id,
+      productsOrder = [],
+      admin_update_logs,
+    } = req.body;
+
+    const order = await orderModel.order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ code: 404, message: "order not found" });
+    }
+
+    if (info_id && typeof info_id === "object" && order.info_id) {
+      await infoModel.info.findByIdAndUpdate(order.info_id, {
+        name: info_id.name,
+        address: info_id.address,
+        phone_number: info_id.phone_number,
+      });
+    }
+
+    let total_price = 0;
+    const normalizedProducts = await Promise.all(
+      (productsOrder || []).map(async (product) => {
+        const quantity = Number(product.quantity || 1);
+        const discountValue = Number(product.discount_value || 0);
+        const customPrice = Number(product.custom_price || 0);
+        let unitPrice = customPrice;
+
+        if (!unitPrice && product.option_id) {
+          const option = await optionModel.option.findById(product.option_id);
+          unitPrice = Number(option?.price || 0);
+        }
+
+        const finalPrice = Math.max(unitPrice - (unitPrice * discountValue) / 100, 0);
+        total_price += finalPrice * quantity;
+
+        return {
+          option_id: product.option_id || null,
+          quantity,
+          discount_value: discountValue,
+          custom_name: product.custom_name || "",
+          custom_price: customPrice,
+        };
+      })
+    );
+
+    const updatedOrder = await orderModel.order.findByIdAndUpdate(
+      orderId,
+      {
+        status,
+        shipper_id: shipper_id || null,
+        payment_status,
+        payment_method,
+        delivery_method,
+        ip,
+        productsOrder: normalizedProducts,
+        total_price,
+        admin_update_logs: Array.isArray(admin_update_logs)
+          ? admin_update_logs
+          : order.admin_update_logs || [],
+      },
+      { new: true }
+    );
+
+    return res.status(200).json({
+      code: 200,
+      result: updatedOrder,
+      message: "update order successfully",
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ code: 500, message: error.message });
+  }};
 
 const detailOrders = async (req, res, next) => {
 	try {
@@ -344,6 +426,7 @@ const detailOrders = async (req, res, next) => {
 		const orderDetail = await orderModel.order
 			.findById(orderId)
 			.populate("user_id", "email username full_name role_id is_active")
+			.populate("shipper_id", "email username full_name")
 			.populate({
 				path: "productsOrder",
 				populate: {
@@ -491,6 +574,7 @@ const getAllOrder = async (req, res, next) => {
 		const order = await orderModel.order
 			.find()
 			.populate("user_id", "email username full_name is_active")
+			.populate("shipper_id", "email username full_name")
 			.populate({
 				path: "productsOrder",
 				populate: {
@@ -521,6 +605,7 @@ module.exports = {
 	createOrder,
 	getOrdersByUserId,
 	updateOrderStatus,
+	updateOrder,
 	detailOrders,
 	// ordersForStore,
 	// collectOrders,
