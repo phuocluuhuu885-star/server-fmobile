@@ -3,11 +3,15 @@ var db = require("../config/ConnectDB");
 const orderSchema = new db.mongoose.Schema(
   {
     user_id: { type: db.mongoose.Schema.Types.ObjectId, ref: "account" },
+    shipper_id: { type: db.mongoose.Schema.Types.ObjectId, ref: "shipper", default: null },
+                      
     productsOrder: [
       {
         option_id: { type: db.mongoose.Schema.Types.ObjectId, ref: "option" },
         quantity: { type: Number },
         discount_value: { type: Number},
+        custom_name: { type: String, default: "" },
+        custom_price: { type: Number, default: 0 },
       },
     ],
     total_price: { type: Number }, //tổng tiền tất cả mặt hàng
@@ -16,6 +20,7 @@ const orderSchema = new db.mongoose.Schema(
       enum: ["Chờ xác nhận", "Chờ giao hàng","Đang giao hàng", "Đã giao hàng", "Đã hủy"],
       default: "Chờ xác nhận",
     },
+    reason: { type: String, default: "" },
     info_id: {
       type: db.mongoose.Schema.Types.ObjectId,
       ref: "info",  

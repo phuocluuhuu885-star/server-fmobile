@@ -5,7 +5,7 @@ var cookieParser = require("cookie-parser");
 var logger = require("morgan");
 var cors = require("cors");
 const admin = require('firebase-admin');
-const serviceAccount = require("./serviceAccountKey.json")
+//const serviceAccount = require("./serviceAccountKey.json")
 var siteRouter = require("./routers/site.route");
 var productsRouter = require("./routers/products.route");
 var categoryRouter = require("./routers/category.route");
@@ -21,11 +21,12 @@ var notifiRoute = require("./routers/notification.route");
 var statisticalRoute = require('./routers/statistical.route'); 
 var voucherRoute = require("./routers/voucher.router");
 var yeuthichRoute = require("./routers/yeuthich.route");
+var shipperRoute = require("./routers/shipper.route");
 var app = express();
 
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+//  credential: admin.credential.cert(serviceAccount)
 });
 console.log("Firebase Admin đã sẵn sàng!");
 app.use(cors());
@@ -54,7 +55,7 @@ app.use('/api/notifi',notifiRoute);
 app.use('/api/statistical', statisticalRoute);
 app.use('/api/yeuthich', yeuthichRoute);
 app.use('/api/voucher', voucherRoute);
-
+app.use('/api/shipper', shipperRoute);
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {
   next(createError(404));
