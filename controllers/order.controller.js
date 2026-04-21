@@ -8,6 +8,21 @@ const config = {
 	key2: "trMrHtvjo6myautx6ujYwSv0Yra79trW",
 };
 
+const addOrderLog = async (orderId, adminName, action, details, note = "") => {
+	await orderModel.order.findByIdAndUpdate(orderId, {
+		$push: {
+			admin_update_logs: {
+				updated_by: adminName,
+				action: action,
+				details: details,
+				note: note,
+				timestamp: new Date(),
+				to_time: new Date()
+			}
+		}
+	});
+};
+
 const deleteOrder = async (req, res) => {
     try {
         const orderId = req.params.id; // Lấy ID từ URL
@@ -331,6 +346,11 @@ const updateOrderStatus = async (req, res, next) => {
 			// }
 		}
 
+		if (order.status !== status) {
+			const adminName = req.user ? (req.user.username || req.user.full_name || req.user.email || "Admin") : "System";
+			await addOrderLog(orderId, adminName, "Cập nhật trạng thái", `${order.status} -> ${status}`);
+		}
+
 		return res.status(200).json({ code: 200, message: "Update status order successfully" });
 	} catch (error) {
 		console.log(error);
@@ -348,7 +368,7 @@ const updateOrder = async (req, res, next) => {
       ip,
       info_id,
       productsOrder = [],
-      admin_update_logs,
+      note,
     } = req.body;
 
     const order = await orderModel.order.findById(orderId);
@@ -400,12 +420,21 @@ const updateOrder = async (req, res, next) => {
         ip,
         productsOrder: normalizedProducts,
         total_price,
-        admin_update_logs: Array.isArray(admin_update_logs)
-          ? admin_update_logs
-          : order.admin_update_logs || [],
       },
       { new: true }
     );
+
+    if (updatedOrder) {
+        let updateDetails = [];
+        if (order.status !== status) updateDetails.push(`Trạng thái: ${order.status} -> ${status}`);
+        if (order.payment_status !== payment_status) updateDetails.push(`Thanh toán: ${order.payment_status} -> ${payment_status}`);
+        if (order.total_price !== total_price) updateDetails.push(`Tổng tiền: ${order.total_price} -> ${total_price}`);
+        
+        let detailsStr = updateDetails.length > 0 ? updateDetails.join(', ') : "Cập nhật thông tin đơn hàng/sản phẩm";
+        
+        const adminName = req.user ? (req.user.username || req.user.full_name || req.user.email || "Admin") : "System";
+        await addOrderLog(orderId, adminName, "Sửa đơn hàng", detailsStr, note || "");
+    }
 
     return res.status(200).json({
       code: 200,

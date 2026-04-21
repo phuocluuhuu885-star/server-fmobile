@@ -27,8 +27,18 @@ const orderSchema = new db.mongoose.Schema(
     },
     payment_status: { type: Boolean, default: false }, // false = chưa thanh toán
     payment_method: { type: Number, default: 1 },    // 1: COD, 2: ZaloPay
-    app_trans_id: { type: String, unique: true, sparse: true } // Mã đối soát ZaloPay // false = chưa thanh toán
-
+    app_trans_id: { type: String, unique: true, sparse: true }, // Mã đối soát ZaloPay // false = chưa thanh toán
+    admin_update_logs: [
+      {
+        updated_by: { type: String },         // Tên admin thực hiện
+        action: { type: String },             // Hành động
+        details: { type: String },            // Chi tiết thay đổi
+        note: { type: String, default: "" },  // Ghi chú admin
+        duration_minutes: { type: Number, default: 0 },
+        from_time: { type: Date },
+        to_time: { type: Date, default: Date.now }
+      }
+    ]
   },
   
   {
