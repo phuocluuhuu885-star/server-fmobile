@@ -3,7 +3,6 @@ var db = require("../config/ConnectDB");
 const orderSchema = new db.mongoose.Schema(
   {
     user_id: { type: db.mongoose.Schema.Types.ObjectId, ref: "account" },
-    shipper_id: { type: db.mongoose.Schema.Types.ObjectId, ref: "shipper", default: null },
                       
     productsOrder: [
       {

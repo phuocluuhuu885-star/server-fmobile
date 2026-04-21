@@ -342,7 +342,6 @@ const updateOrder = async (req, res, next) => {
     const { orderId } = req.params;
     const {
       status,
-      shipper_id,
       payment_status,
       payment_method,
       delivery_method,
@@ -395,7 +394,6 @@ const updateOrder = async (req, res, next) => {
       orderId,
       {
         status,
-        shipper_id: shipper_id || null,
         payment_status,
         payment_method,
         delivery_method,
@@ -426,7 +424,6 @@ const detailOrders = async (req, res, next) => {
 		const orderDetail = await orderModel.order
 			.findById(orderId)
 			.populate("user_id", "email username full_name role_id is_active")
-			.populate("shipper_id", "email username full_name")
 			.populate({
 				path: "productsOrder",
 				populate: {
@@ -574,7 +571,6 @@ const getAllOrder = async (req, res, next) => {
 		const order = await orderModel.order
 			.find()
 			.populate("user_id", "email username full_name is_active")
-			.populate("shipper_id", "email username full_name")
 			.populate({
 				path: "productsOrder",
 				populate: {
