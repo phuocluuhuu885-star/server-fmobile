@@ -30,6 +30,7 @@ router.get("/top-product", controller.getTopProduct);
 router.post(
   "/create-product",
   middleware.checkToken,
+  upload.array("images", 10),
   // middleware.checkStoreExits,
   controller.addProduct
 );
