@@ -52,7 +52,7 @@ const calculateTotalPrice = async (productsOrder) => {
 		}
 	}
 
-	return totalPrice;
+	return Math.round(totalPrice);
 };
 
 // 2. Hàm Tạo đơn hàng (Dùng chung cho cả COD và ZaloPay)
@@ -281,7 +281,7 @@ const getOrdersByUserId = async (req, res, next) => {
 						return {
 							option_id: option,
 							quantity: productOrder.quantity,
-							discount_value: productOrder.discount_value,
+							discount_value: Math.round(productOrder.discount_value || 0),
 						};
 					}),
 				);
@@ -291,7 +291,7 @@ const getOrdersByUserId = async (req, res, next) => {
 					user_id: order.user_id,
 					info_id: order.info_id,
 					productsOrder,
-					total_price: order.total_price,
+					total_price: Math.round(order.total_price || 0),
 					status: order.status,
 					payment_method: order.payment_method,
 					payment_status: order.payment_status,
@@ -407,7 +407,7 @@ const updateOrder = async (req, res, next) => {
         return {
           option_id: product.option_id || null,
           quantity,
-          discount_value: discountValue,
+          discount_value: Math.round(discountValue),
           custom_name: product.custom_name || "",
           custom_price: customPrice,
         };
@@ -423,7 +423,7 @@ const updateOrder = async (req, res, next) => {
         delivery_method,
         ip,
         productsOrder: normalizedProducts,
-        total_price,
+        total_price: Math.round(total_price),
       },
       { new: true }
     );
@@ -475,10 +475,18 @@ const detailOrders = async (req, res, next) => {
 			return res.status(404).json({ error: "Order not found" });
 		}
 
+		const orderObj = orderDetail.toObject();
+		orderObj.total_price = Math.round(orderObj.total_price || 0);
+		if (orderObj.productsOrder) {
+			orderObj.productsOrder.forEach(p => {
+				p.discount_value = Math.round(p.discount_value || 0);
+			});
+		}
+
 		return res.status(200).json({
 			code: 200,
-			result: orderDetail,
-			message: "created order successfully",
+			result: orderObj,
+			message: "get detail order successfully",
 		});
 	} catch (error) {
 		return res.status(500).json({ code: 500, message: error.message });
