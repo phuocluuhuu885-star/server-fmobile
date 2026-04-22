@@ -9,43 +9,52 @@ const jwt = require("jsonwebtoken");
 
 const addProduct = async (req, res, next) => {
   try {
-    // const store_id = req.store._id;
     const dataBody = req.body;
-    const category = await categoryModel.category.findById(
-      dataBody.category_id
-    );
+
+    // 1. Kiểm tra Category
+    const category = await categoryModel.category.findById(dataBody.category_id);
     if (!category) {
-      console.log("no found category!");
       return res.status(404).json({ code: 404, message: "no found category!" });
     }
-    // const store = await storeModel.store.findById(store_id);
-    // if (!store) {
-    //   return res.status(404).json({ code: 404, message: "no found store!" });
-    // }
+
+    // 2. Validate các trường bắt buộc
     if (!dataBody.name) {
-      console.log("name is required");
-      return res.status(404).json({ code: 404, message: "name is required" });
+      return res.status(400).json({ code: 400, message: "name is required" });
     }
     if (!dataBody.manufacturer) {
-      return res
-        .status(404)
-        .json({ code: 404, message: "manufacturer is required" });
+      return res.status(400).json({ code: 400, message: "manufacturer is required" });
     }
     if (!dataBody.status) {
-      return res.status(404).json({ code: 404, message: "status is required" });
+      return res.status(400).json({ code: 400, message: "status is required" });
     }
-    const product = new productModel.product({ ...dataBody });
+
+    // --- PHẦN XỬ LÝ ẢNH MỚI THÊM VÀO ---
+    let imageUrls = [];
+    if (req.files && req.files.length > 0) {
+      // Multer-storage-cloudinary sẽ trả về đường dẫn ảnh trong trường 'path'
+      imageUrls = req.files.map((file) => file.path);
+    }
+    // ------------------------------------
+
+    // 3. Tạo Product object mới (kết hợp data chữ và mảng ảnh)
+    const product = new productModel.product({ 
+      ...dataBody, 
+      images: imageUrls // Ghi đè hoặc thêm trường images từ Cloudinary
+    });
+
     await product.save();
-    console.log(product);
+
+    // 4. Cập nhật ID sản phẩm vào Category
     category.product.push(product._id);
     await category.save();
+
     return res.status(201).json({
       code: 201,
       result: product,
       message: "created product successfully",
     });
   } catch (error) {
-    console.error(error);
+    console.error("Error at addProduct:", error);
     return res.status(500).json({ code: 500, message: error.message });
   }
 };

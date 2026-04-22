@@ -6,7 +6,7 @@ var middleware = require("../middleware/auth.middleware");
 router.post("/create-order", middleware.checkToken, controller.createOrder);
 router.post("/create-order-by-zalo", middleware.checkToken, controller.createOrderByZalo);
 
-// ✅ THÊM ROUTE NÀY
+
 router.put(
   "/update-order/:orderId",
   middleware.checkToken,
