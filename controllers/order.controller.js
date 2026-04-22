@@ -293,6 +293,10 @@ const getOrdersByUserId = async (req, res, next) => {
 					productsOrder,
 					total_price: order.total_price,
 					status: order.status,
+					payment_method: order.payment_method,
+					payment_status: order.payment_status,
+					app_trans_id: order.app_trans_id,
+					reason: order.reason || "",
 					createdAt: order.createdAt,
 					updatedAt: order.updatedAt,
 				};
@@ -302,7 +306,7 @@ const getOrdersByUserId = async (req, res, next) => {
 		return res.status(200).json({
 			code: 200,
 			result: result,
-			message: "created order successfully",
+			message: "get list order successfully",
 		});
 	} catch (error) {
 		return res.status(500).json({ code: 500, message: error.message });
