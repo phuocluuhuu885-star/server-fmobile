@@ -59,6 +59,7 @@ const getVouchersForCart = async (req, res) => {
 					discountValue: v.discountValue, // Thêm dòng này
 					minOrderValue: v.minOrderValue,
                     expiryDate: v.expiryDate,
+                    applicableProducts: v.applicableProducts, // Thêm trường này để App nhận diện sản phẩm hỗ trợ
 					displayValue: v.discountType === 1 ? `Voucher ${v.discountValue}%` : `Voucher ${v.discountValue}k`,
 				})),
 			};
