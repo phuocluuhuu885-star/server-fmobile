@@ -59,7 +59,7 @@ const calculateTotalPrice = async (productsOrder) => {
 const createOrderDefault = async (req, res, next) => {
 	try {
 		const user_id = req.user._id;
-		const { productsOrder, info_id, payment_method } = req.body;
+		const { productsOrder, info_id, payment_method, voucher_ids } = req.body;
 
 		const total_price = await calculateTotalPrice(productsOrder);
 
@@ -81,6 +81,7 @@ const createOrderDefault = async (req, res, next) => {
 			app_trans_id,
 			status: initialStatus,
 			payment_status: false,
+			voucher_ids: voucher_ids || [],
 		});
 
 		const savedOrder = await newOrder.save();
@@ -91,6 +92,14 @@ const createOrderDefault = async (req, res, next) => {
 				await optionModel.option.findByIdAndUpdate(product.option_id, {
 					$inc: { quantity: -product.quantity, soldQuantity: product.quantity },
 				});
+			}
+			if (voucher_ids && voucher_ids.length > 0) {
+				const VoucherModel = require("../models/Voucher").voucher;
+				for (const v_id of voucher_ids) {
+					await VoucherModel.findByIdAndUpdate(v_id, {
+						$inc: { quantity: -1 }
+					});
+				}
 			}
 		}
 
@@ -137,6 +146,14 @@ const zlCallback = async (req, res) => {
 					$inc: { quantity: -product.quantity, soldQuantity: product.quantity },
 				});
 			}
+			if (order.voucher_ids && order.voucher_ids.length > 0) {
+				const VoucherModel = require("../models/Voucher").voucher;
+				for (const v_id of order.voucher_ids) {
+					await VoucherModel.findByIdAndUpdate(v_id, {
+						$inc: { quantity: -1 }
+					});
+				}
+			}
 		}
 		result.return_code = 1;
 		result.return_message = "success";
@@ -151,7 +168,7 @@ const zlCallback = async (req, res) => {
 const createOrder = async (req, res, next) => {
 	try {
 		const user_id = req.user._id;
-		const { productsOrder, info_id } = req.body;
+		const { productsOrder, info_id, voucher_ids } = req.body;
 		console.log("test" + productsOrder);
 		const total_price = await calculateTotalPrice(productsOrder);
 		// Sử dụng đối tượng để theo dõi store_id và productsOrder tương ứng
@@ -160,6 +177,7 @@ const createOrder = async (req, res, next) => {
 			productsOrder,
 			total_price,
 			info_id,
+			voucher_ids: voucher_ids || [],
 		});
 
 		// Save the order to the database
@@ -178,6 +196,15 @@ const createOrder = async (req, res, next) => {
 			);
 		}
 
+		if (voucher_ids && voucher_ids.length > 0) {
+			const VoucherModel = require("../models/Voucher").voucher;
+			for (const v_id of voucher_ids) {
+				await VoucherModel.findByIdAndUpdate(v_id, {
+					$inc: { quantity: -1 }
+				});
+			}
+		}
+
 		return res.status(201).json({
 			code: 201,
 			result: savedOrder,
@@ -192,7 +219,7 @@ const createOrder = async (req, res, next) => {
 const createOrderByZalo = async (req, res, next) => {
 	try {
 		const user_id = req.user._id;
-		const { productsOrder, info_id, payment_status } = req.body;
+		const { productsOrder, info_id, payment_status, voucher_ids } = req.body;
 
 		const total_price = await calculateTotalPrice(productsOrder);
 		// Sử dụng đối tượng để theo dõi store_id và productsOrder tương ứng
@@ -202,6 +229,7 @@ const createOrderByZalo = async (req, res, next) => {
 			total_price,
 			info_id,
 			payment_status,
+			voucher_ids: voucher_ids || [],
 		});
 
 		// Save the order to the database
@@ -353,6 +381,22 @@ const updateOrderStatus = async (req, res, next) => {
 		if (order.status !== status) {
 			const adminName = req.user ? (req.user.username || req.user.full_name || req.user.email || "Admin") : "System";
 			await addOrderLog(orderId, adminName, "Cập nhật trạng thái", `${order.status} -> ${status}`);
+
+			// Restore quantity if cancelled and it was previously deducted
+			if (status === "Đã hủy" && order.status !== "Chờ thanh toán" && order.status !== "Đã hủy") {
+				for (const product of order.productsOrder) {
+					await optionModel.option.findByIdAndUpdate(
+						product.option_id,
+						{ $inc: { quantity: product.quantity, soldQuantity: -product.quantity } }
+					);
+				}
+				if (order.voucher_ids && order.voucher_ids.length > 0) {
+					const VoucherModel = require("../models/Voucher").voucher;
+					for (const v_id of order.voucher_ids) {
+						await VoucherModel.findByIdAndUpdate(v_id, { $inc: { quantity: 1 } });
+					}
+				}
+			}
 		}
 
 		return res.status(200).json({ code: 200, message: "Update status order successfully" });
@@ -593,6 +637,20 @@ const cancelOrder = async (req, res, next) => {
 		}
 
 		await orderModel.order.findByIdAndUpdate(orderId, { status: "Đã hủy" }, { new: true });
+
+		// Restore quantities since order was in "Chờ xác nhận" (meaning deducted)
+		for (const product of order.productsOrder) {
+			await optionModel.option.findByIdAndUpdate(
+				product.option_id,
+				{ $inc: { quantity: product.quantity, soldQuantity: -product.quantity } }
+			);
+		}
+		if (order.voucher_ids && order.voucher_ids.length > 0) {
+			const VoucherModel = require("../models/Voucher").voucher;
+			for (const v_id of order.voucher_ids) {
+				await VoucherModel.findByIdAndUpdate(v_id, { $inc: { quantity: 1 } });
+			}
+		}
 
 		return res.status(200).json({ code: 200, message: "update stutus order successfully" });
 	} catch (error) {
