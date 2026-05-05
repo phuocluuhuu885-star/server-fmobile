@@ -13,6 +13,7 @@ const orderSchema = new db.mongoose.Schema(
         custom_price: { type: Number, default: 0 },
       },
     ],
+    voucher_ids: [{ type: db.mongoose.Schema.Types.ObjectId, ref: "voucher" }],
     total_price: { type: Number }, //tổng tiền tất cả mặt hàng
     status: {
       type: String,

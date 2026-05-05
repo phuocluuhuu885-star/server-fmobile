@@ -257,6 +257,7 @@ const resendConfirmationCode = async (req, res, next) => {
 const loginWithGoogle = async (req, res, next) => {
 	// The token you received from the Android app
 	const idToken = req.body.idToken; //token của google trả về
+	const fcmToken = req.body.fcmToken;
 
 	if (!idToken) {
 		return res.status(400).json({ code: 400, message: "Google ID token is required" });
@@ -276,6 +277,7 @@ const loginWithGoogle = async (req, res, next) => {
 		if (existingUser) {
 			const token = jwt.sign({ userId: existingUser._id }, process.env.KEY_TOKEN);
 			existingUser.token = token;
+			if (fcmToken) existingUser.fcmToken = fcmToken;
 			await existingUser.save();
 			return res.status(200).json({ code: 200, token, message: "Login successful" });
 		} else {
@@ -296,6 +298,7 @@ const loginWithGoogle = async (req, res, next) => {
 			// Perform the login logic for the new user and return a token
 			const token = jwt.sign({ userId: newUser._id }, process.env.KEY_TOKEN);
 			newUser.token = token;
+			if (fcmToken) newUser.fcmToken = fcmToken;
 			await newUser.save();
 			return res.status(200).json({
 				code: 200,
