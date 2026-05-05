@@ -405,10 +405,10 @@ const updateOrderStatus = async (req, res, next) => {
 			}
 		}
 
-		    // ---- Send push notification to user about status change ----
+    // ---- Send push notification to user about status change ----
     try {
         const user = await accountModel.account.findById(updatedOrder.user_id).lean();
-        if (user && user.fcmToken) {
+        if (user) {
             const productNames = await Promise.all(updatedOrder.productsOrder.map(async (po) => {
                 const opt = await optionModel.option.findById(po.option_id).populate('product_id');
                 return opt?.product_id?.name?.trim();
@@ -417,7 +417,23 @@ const updateOrderStatus = async (req, res, next) => {
             const productPreview = filtered.length > 2 ? filtered.slice(0, 2).join(', ') + ', ...' : filtered.join(', ');
             const title = "🛒 Cập nhật trạng thái đơn hàng";
             const body = `Bạn có đơn hàng mới: ${productPreview} – ${status}`;
-            await sendNotification(user.fcmToken, title, body, { order_id: orderId, status });
+            
+            // Lưu thông báo vào CSDL để app có thể hiển thị trong tab Thông báo
+            const notifiModel = require("../models/Notification");
+            const newNoti = new notifiModel.notifi({
+                sender_id: req.user ? req.user._id : updatedOrder.user_id, // Admin hoặc hệ thống
+                receiver_id: updatedOrder.user_id,
+                content: body,
+                order_id: String(orderId),
+                status: "unread",
+                type: "wfc" // Dùng type tương ứng (tuỳ chỉnh theo status nếu cần)
+            });
+            await newNoti.save();
+
+            // Chỉ gửi push nếu user có token
+            if (user.fcmToken) {
+                await sendNotification(user.fcmToken, title, body, { order_id: String(orderId), status: String(status) });
+            }
         }
     } catch (e) {
         console.error('Lỗi gửi thông báo trạng thái đơn hàng:', e);
