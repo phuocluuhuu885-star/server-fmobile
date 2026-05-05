@@ -3,6 +3,7 @@ const optionModel = require("../models/Option");
 const productModel = require("../models/Products");
 const { sendNotification } = require('../config/Fcm');
 const infoModel = require("../models/Info");
+const accountModel = require("../models/Account");
 const config = {
 	app_id: "2555",
 	key2: "trMrHtvjo6myautx6ujYwSv0Yra79trW",
@@ -404,7 +405,24 @@ const updateOrderStatus = async (req, res, next) => {
 			}
 		}
 
-		return res.status(200).json({ code: 200, message: "Update status order successfully" });
+		    // ---- Send push notification to user about status change ----
+    try {
+        const user = await accountModel.account.findById(updatedOrder.user_id).lean();
+        if (user && user.fcmToken) {
+            const productNames = await Promise.all(updatedOrder.productsOrder.map(async (po) => {
+                const opt = await optionModel.option.findById(po.option_id).populate('product_id');
+                return opt?.product_id?.name?.trim();
+            }));
+            const filtered = productNames.filter(Boolean);
+            const productPreview = filtered.length > 2 ? filtered.slice(0, 2).join(', ') + ', ...' : filtered.join(', ');
+            const title = "🛒 Cập nhật trạng thái đơn hàng";
+            const body = `Bạn có đơn hàng mới: ${productPreview} – ${status}`;
+            await sendNotification(user.fcmToken, title, body, { order_id: orderId, status });
+        }
+    } catch (e) {
+        console.error('Lỗi gửi thông báo trạng thái đơn hàng:', e);
+    }
+    return res.status(200).json({ code: 200, message: "Update status order successfully" });
 	} catch (error) {
 		console.log(error);
 		return res.status(500).json({ code: 500, message: error.message });
