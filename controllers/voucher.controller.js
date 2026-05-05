@@ -77,6 +77,7 @@ const getVouchersForCart = async (req, res) => {
 					discountType: v.discountType,
 					discountValue: v.discountValue,
 					minOrderValue: v.minOrderValue,
+					maxDiscountValue: v.maxDiscountValue,
 					expiryDate: v.expiryDate,
 					applicableProducts: v.applicableProducts,
 					displayValue: v.discountType === 1 ? `Voucher ${v.discountValue}%` : `Voucher ${v.discountValue}k`,
