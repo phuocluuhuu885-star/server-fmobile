@@ -229,6 +229,7 @@ const createOrderByZalo = async (req, res, next) => {
 			total_price,
 			info_id,
 			payment_status,
+			payment_method: 2,
 			voucher_ids: voucher_ids || [],
 		});
 
