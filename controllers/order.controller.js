@@ -327,7 +327,11 @@ const updateOrderStatus = async (req, res, next) => {
 		if (status === "Đã hủy" && (order.status === "Chờ giao hàng" || order.status === "Đã giao hàng" || order.status === "Đang giao hàng")) {
 			return res.status(409).json({ code: 409, message: "Don't change status order" });
 		}
-		const updatedOrder = await orderModel.order.findByIdAndUpdate(orderId, { status }, { new: true });
+		const updateData = { status };
+		if (status === "Đã giao hàng" && order.status !== "Đã giao hàng" && !order.completedAt) {
+			updateData.completedAt = new Date();
+		}
+		const updatedOrder = await orderModel.order.findByIdAndUpdate(orderId, updateData, { new: true });
 
 		// Check if the order status is updated successfully
 		if (!updatedOrder) {
@@ -414,9 +418,7 @@ const updateOrder = async (req, res, next) => {
       })
     );
 
-    const updatedOrder = await orderModel.order.findByIdAndUpdate(
-      orderId,
-      {
+    const updateData = {
         status,
         payment_status,
         payment_method,
@@ -424,7 +426,15 @@ const updateOrder = async (req, res, next) => {
         ip,
         productsOrder: normalizedProducts,
         total_price: Math.round(total_price),
-      },
+    };
+
+    if (status === "Đã giao hàng" && order.status !== "Đã giao hàng" && !order.completedAt) {
+        updateData.completedAt = new Date();
+    }
+
+    const updatedOrder = await orderModel.order.findByIdAndUpdate(
+      orderId,
+      updateData,
       { new: true }
     );
 

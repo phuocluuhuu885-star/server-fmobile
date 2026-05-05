@@ -38,7 +38,8 @@ const orderSchema = new db.mongoose.Schema(
         from_time: { type: Date },
         to_time: { type: Date, default: Date.now }
       }
-    ]
+    ],
+    completedAt: { type: Date }
   },
   
   {
