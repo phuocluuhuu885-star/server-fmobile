@@ -23,7 +23,7 @@ const createNotification = async (req, res, next) => {
             // Cắt bớt ID đơn hàng cho ngắn gọn (lấy 6 ký tự cuối)
             const shortOrderId = order_id ? order_id.substring(order_id.length - 6).toUpperCase() : "MỚI";
             
-            const title = `🛒 Đơn hàng #${shortOrderId} thành công!`;
+            const title = `🛒 Đặt hàng thành công!`;
             const body = content || "Bạn đã đặt hàng thành công, chúng tôi sẽ sớm liên hệ.";
 
             // Gọi hàm gửi thông báo (Nên truyền thêm object data nếu hàm sendNotification hỗ trợ)
