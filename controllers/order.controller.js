@@ -346,7 +346,7 @@ const getOrdersByUserId = async (req, res, next) => {
 const updateOrderStatus = async (req, res, next) => {
 	try {
 		const { orderId } = req.params;
-		const { status } = req.body;
+		const { status, note, reason } = req.body;
 
 		const order = await orderModel.order.findById(orderId);
 
@@ -361,6 +361,12 @@ const updateOrderStatus = async (req, res, next) => {
 		if (status === "Đã giao hàng" && order.status !== "Đã giao hàng" && !order.completedAt) {
 			updateData.completedAt = new Date();
 		}
+		
+		const finalReason = note || reason || "";
+		if (status === "Đã hủy" && finalReason) {
+		    updateData.reason = finalReason;
+		}
+		
 		const updatedOrder = await orderModel.order.findByIdAndUpdate(orderId, updateData, { new: true });
 
 		// Check if the order status is updated successfully
@@ -386,7 +392,7 @@ const updateOrderStatus = async (req, res, next) => {
 
 		if (order.status !== status) {
 			const adminName = req.user ? (req.user.username || req.user.full_name || req.user.email || "Admin") : "System";
-			await addOrderLog(orderId, adminName, "Cập nhật trạng thái", `${order.status} -> ${status}`);
+			await addOrderLog(orderId, adminName, "Cập nhật trạng thái", `${order.status} -> ${status}`, finalReason);
 
 			// Restore quantity if cancelled and it was previously deducted
 			if (status === "Đã hủy" && order.status !== "Chờ thanh toán" && order.status !== "Đã hủy") {
@@ -438,7 +444,9 @@ const updateOrderStatus = async (req, res, next) => {
     } catch (e) {
         console.error('Lỗi gửi thông báo trạng thái đơn hàng:', e);
     }
-    return res.status(200).json({ code: 200, message: "Update status order successfully" });
+    
+    const finalOrder = await orderModel.order.findById(orderId).lean();
+    return res.status(200).json({ code: 200, result: finalOrder, message: "Update status order successfully" });
 	} catch (error) {
 		console.log(error);
 		return res.status(500).json({ code: 500, message: error.message });
