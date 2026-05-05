@@ -19,20 +19,24 @@ const createNotification = async (req, res, next) => {
 
 		const savedNotification = await newNotification.save();
 
-		if (req.user && req.user.fcmToken) {
-            // Cắt bớt ID đơn hàng cho ngắn gọn (lấy 6 ký tự cuối)
-            const shortOrderId = order_id ? order_id.substring(order_id.length - 6).toUpperCase() : "MỚI";
-            
+		// Tìm fcmToken từ DB theo sender_id để đảm bảo luôn có token mới nhất
+		const senderUser = await accountModel.account.findById(sender_id).lean();
+		const fcmTokenToSend = senderUser?.fcmToken;
+
+		console.log("[Notification] sender_id:", sender_id, "| fcmToken:", fcmTokenToSend ? "CÓ TOKEN" : "KHÔNG CÓ TOKEN");
+
+		if (fcmTokenToSend) {
             const title = `🛒 Đặt hàng thành công!`;
             const body = content || "Bạn đã đặt hàng thành công, chúng tôi sẽ sớm liên hệ.";
 
-            // Gọi hàm gửi thông báo (Nên truyền thêm object data nếu hàm sendNotification hỗ trợ)
             sendNotification(
-                req.user.fcmToken, 
-                title, 
-                body, 
-                { order_id: String(order_id) } // Truyền thêm ID đơn hàng để Android xử lý
+                fcmTokenToSend,
+                title,
+                body,
+                { order_id: String(order_id || "") }
             ).catch((err) => console.error("Lỗi gửi FCM:", err));
+        } else {
+            console.warn("[Notification] Bỏ qua gửi FCM vì user không có fcmToken. sender_id:", sender_id);
         }
 
 		return res.status(201).json({
