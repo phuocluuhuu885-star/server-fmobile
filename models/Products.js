@@ -16,6 +16,10 @@ const productSchema = new db.mongoose.Schema(
     images: [{ type: String }],
     description: { type: String },
     status: { type: String, required: true, enum: ["mới", "cũ"] }, //mới, cũ
+    condition_percent: { type: String, enum: ["99", "98", "95", "100", ""] }, // phần trăm độ mới
+    battery_health: { type: String }, // tình trạng pin (%)
+    is_original: { type: String, enum: ["Zin nguyên bản", "Đã thay linh kiện", ""] }, // zin hay thay
+    warranty_time: { type: String, enum: ["1 tháng", "3 tháng", "6 tháng", "12 tháng", ""] }, // cam kết bảo hành
     discounted: { type: Boolean, default: false }, //có giảm giá hay không
     is_active: { type: Boolean },
     screen: { type: String },
