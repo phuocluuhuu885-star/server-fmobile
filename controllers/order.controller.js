@@ -4,6 +4,10 @@ const productModel = require("../models/Products");
 const { sendNotification } = require('../config/Fcm');
 const infoModel = require("../models/Info");
 const accountModel = require("../models/Account");
+const {
+	assertCodAllowedForUser,
+	syncTrustAfterOrderStatusChange,
+} = require("../utils/userTrust");
 const config = {
 	app_id: "2555",
 	key2: "trMrHtvjo6myautx6ujYwSv0Yra79trW",
@@ -61,6 +65,17 @@ const createOrderDefault = async (req, res, next) => {
 	try {
 		const user_id = req.user._id;
 		const { productsOrder, info_id, payment_method, voucher_ids } = req.body;
+
+		if (payment_method !== 2) {
+			try {
+				await assertCodAllowedForUser(user_id);
+			} catch (e) {
+				if (e.code === "PAYMENT_RESTRICTED") {
+					return res.status(403).json({ code: 403, message: e.message });
+				}
+				throw e;
+			}
+		}
 
 		const total_price = await calculateTotalPrice(productsOrder);
 
@@ -171,6 +186,16 @@ const createOrder = async (req, res, next) => {
 		const user_id = req.user._id;
 		const { productsOrder, info_id, voucher_ids } = req.body;
 		console.log("test" + productsOrder);
+
+		try {
+			await assertCodAllowedForUser(user_id);
+		} catch (e) {
+			if (e.code === "PAYMENT_RESTRICTED") {
+				return res.status(403).json({ code: 403, message: e.message });
+			}
+			throw e;
+		}
+
 		const total_price = await calculateTotalPrice(productsOrder);
 		// Sử dụng đối tượng để theo dõi store_id và productsOrder tương ứng
 		const newOrder = new orderModel.order({
@@ -354,7 +379,13 @@ const updateOrderStatus = async (req, res, next) => {
 			return res.status(404).json({ code: 404, message: "order not found" });
 		}
 
-		if (status === "Đã hủy" && (order.status === "Chờ giao hàng" || order.status === "Đã giao hàng" || order.status === "Đang giao hàng")) {
+		const role = req.user?.role_id;
+		const isStaff = role === "admin" || role === "staff";
+		if (
+			status === "Đã hủy" &&
+			(order.status === "Đã giao hàng" ||
+				((order.status === "Chờ giao hàng" || order.status === "Đang giao hàng") && !isStaff))
+		) {
 			return res.status(409).json({ code: 409, message: "Don't change status order" });
 		}
 		const updateData = { status };
@@ -408,6 +439,16 @@ const updateOrderStatus = async (req, res, next) => {
 						await VoucherModel.findByIdAndUpdate(v_id, { $inc: { quantity: 1 } });
 					}
 				}
+			}
+
+			try {
+				await syncTrustAfterOrderStatusChange(
+					updatedOrder.user_id,
+					order.status,
+					status
+				);
+			} catch (e) {
+				console.error("trust_score sync:", e);
 			}
 		}
 
@@ -505,6 +546,21 @@ const updateOrder = async (req, res, next) => {
       })
     );
 
+    const nextPaymentMethod =
+      payment_method !== undefined && payment_method !== null
+        ? payment_method
+        : order.payment_method;
+    if (nextPaymentMethod === 1) {
+      try {
+        await assertCodAllowedForUser(order.user_id);
+      } catch (e) {
+        if (e.code === "PAYMENT_RESTRICTED") {
+          return res.status(403).json({ code: 403, message: e.message });
+        }
+        throw e;
+      }
+    }
+
     const updateData = {
         status,
         payment_status,
@@ -537,6 +593,22 @@ const updateOrder = async (req, res, next) => {
         await addOrderLog(orderId, adminName, "Sửa đơn hàng", detailsStr, note || "");
     }
 
+    if (
+      typeof status === "string" &&
+      order.status !== status &&
+      updatedOrder?.user_id
+    ) {
+      try {
+        await syncTrustAfterOrderStatusChange(
+          updatedOrder.user_id,
+          order.status,
+          status
+        );
+      } catch (e) {
+        console.error("trust_score sync (updateOrder):", e);
+      }
+    }
+
     return res.status(200).json({
       code: 200,
       result: updatedOrder,
@@ -553,7 +625,10 @@ const detailOrders = async (req, res, next) => {
 
 		const orderDetail = await orderModel.order
 			.findById(orderId)
-			.populate("user_id", "email username full_name role_id is_active")
+			.populate(
+				"user_id",
+				"email username full_name role_id is_active trust_score is_blacklisted"
+			)
 			.populate({
 				path: "productsOrder",
 				populate: {
