@@ -14,5 +14,5 @@ const notificationSchema = new db.mongoose.Schema(
   }
 );
 
-let notifi = db.mongoose.model("notification", notificationSchema);
+let notifi = db.mongoose.models.notification || db.mongoose.model("notification", notificationSchema);
 module.exports = { notifi };

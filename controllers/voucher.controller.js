@@ -1,4 +1,5 @@
 const models = require("../models/Voucher");
+const { notifyAllUsers } = require("../utils/NotificationHelper");
 
 const list = async (req, res, next) => {
 	try {
@@ -121,6 +122,14 @@ const addVoucher = async (req, res, next) => {
 		let obj = new models.voucher(data);
 
 		await obj.save();
+
+		// Gửi thông báo có Voucher mới (chạy ngầm)
+		notifyAllUsers(
+			"Ưu đãi mới từ FMobile!",
+			`Mã giảm giá "${obj.title}" vừa xuất hiện. Sử dụng ngay để nhận ưu đãi!`,
+			"promotion"
+		);
+
 		return res.status(200).json({ code: 200, message: "add successfully!" });
 	} catch (error) {
 		return res.status(500).json({ code: 500, message: error.message });

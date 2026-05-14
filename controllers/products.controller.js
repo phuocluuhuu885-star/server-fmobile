@@ -6,6 +6,7 @@ const productRateModel = require("../models/ProductRate");
 const orderModel = require("../models/Orders");
 const { sendEmail } = require("../utils/NodemailerService");
 const jwt = require("jsonwebtoken");
+const { notifyAllUsers } = require("../utils/NotificationHelper");
 
 const addProduct = async (req, res, next) => {
   try {
@@ -816,6 +817,15 @@ const changeActiveProduct = async (req, res, next) => {
       { is_active: active },
       { new: true }
     );
+    // Gửi thông báo nếu sản phẩm được kích hoạt (chạy ngầm)
+    if (active) {
+        notifyAllUsers(
+            "Sản phẩm mới / Hot!",
+            `Sản phẩm "${product.name}" hiện đã mở bán. Khám phá ngay!`,
+            "promotion"
+        );
+    }
+
     return res
       .status(200)
       .json({ code: 200, message: "change active product successfully" });

@@ -20,7 +20,7 @@ const voucherSchema = new db.mongoose.Schema(
 	{ timestamps: true },
 );
 
-let voucher = db.mongoose.model("voucher", voucherSchema);
+let voucher = db.mongoose.models.voucher || db.mongoose.model("voucher", voucherSchema);
 module.exports = {
 	voucher,
 };

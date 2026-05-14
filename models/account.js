@@ -25,7 +25,7 @@ const accountSchema = new db.mongoose.Schema(
   }
 );
 
-let account = db.mongoose.model("account", accountSchema);
+let account = db.mongoose.models.account || db.mongoose.model("account", accountSchema);
 module.exports = {
   account,
 };
