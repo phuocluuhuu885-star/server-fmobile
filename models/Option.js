@@ -11,6 +11,11 @@ const optionSchema = new db.mongoose.Schema(
     quantity: { type: Number }, // số lượng của sản phẩm
     soldQuantity: { type: Number, default: 0 }, // số lượng đã bán
     hot_option: { type: Boolean, default: false }, // option tốt nổi bật nhất
+    storage_capacity: { type: String, default: "" },
+    condition_percent: { type: String, default: "" },
+    battery_health: { type: String, default: "" },
+    is_original: { type: String, default: "" },
+    warranty_time: { type: String, default: "" },
   },
   { timestamps: true }
 );
