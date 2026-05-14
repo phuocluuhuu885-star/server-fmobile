@@ -5,6 +5,8 @@ const storeModel = require("../models/Store");
 const productRateModel = require("../models/ProductRate");
 const orderModel = require("../models/Orders");
 const { sendEmail } = require("../utils/NodemailerService");
+const accountModel = require("../models/account");
+const { sendMulticastNotification } = require("../config/Fcm");
 const jwt = require("jsonwebtoken");
 
 const addProduct = async (req, res, next) => {
@@ -47,6 +49,22 @@ const addProduct = async (req, res, next) => {
     // 4. Cập nhật ID sản phẩm vào Category
     category.product.push(product._id);
     await category.save();
+
+    // 5. Gửi thông báo cho tất cả người dùng
+    try {
+      const users = await accountModel.account.find({ is_active: true, fcmToken: { $exists: true, $ne: "" } });
+      const tokens = users.map(u => u.fcmToken);
+      if (tokens.length > 0) {
+        sendMulticastNotification(
+          tokens,
+          "Sản phẩm mới ra mắt!",
+          `Khám phá ngay sản phẩm ${product.name} vừa cập bến cửa hàng.`,
+          { type: "NEW_PRODUCT", product_id: product._id.toString() }
+        );
+      }
+    } catch (notiError) {
+      console.error("Lỗi khi gửi thông báo sản phẩm mới:", notiError);
+    }
 
     return res.status(201).json({
       code: 201,

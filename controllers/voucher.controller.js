@@ -1,4 +1,6 @@
 const models = require("../models/Voucher");
+const accountModel = require("../models/account");
+const { sendMulticastNotification } = require("../config/Fcm");
 
 const list = async (req, res, next) => {
 	try {
@@ -121,6 +123,24 @@ const addVoucher = async (req, res, next) => {
 		let obj = new models.voucher(data);
 
 		await obj.save();
+
+		// Gửi thông báo cho tất cả người dùng
+		try {
+			const users = await accountModel.account.find({ is_active: true, fcmToken: { $exists: true, $ne: "" } });
+			const tokens = users.map(u => u.fcmToken);
+			if (tokens.length > 0) {
+				const discountStr = obj.discountType === 1 ? `${obj.discountValue}%` : `${obj.discountValue.toLocaleString("vi-VN")}đ`;
+				sendMulticastNotification(
+					tokens,
+					"Voucher mới cực HOT!",
+					`${obj.title} - Giảm ngay ${discountStr}. Nhanh tay săn ngay!`,
+					{ type: "NEW_VOUCHER" }
+				);
+			}
+		} catch (notiError) {
+			console.error("Lỗi khi gửi thông báo voucher mới:", notiError);
+		}
+
 		return res.status(200).json({ code: 200, message: "add successfully!" });
 	} catch (error) {
 		return res.status(500).json({ code: 500, message: error.message });
