@@ -19,6 +19,8 @@ const accountSchema = new db.mongoose.Schema(
       enum: ["admin", "customer", "staff"],
       default: "customer",
     },
+    trust_score: { type: Number, default: 100, min: 0 },
+    is_blacklisted: { type: Boolean, default: false },
   },
   {
     timestamps: true,

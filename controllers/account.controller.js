@@ -24,7 +24,9 @@ const editProfile = async (req, res, next) => {
     if (!user) {
       return res.status(404).json({ code: 404, message: "User not found" });
     }
-    const dataUpdate = req.body;
+    const dataUpdate = { ...req.body };
+    delete dataUpdate.trust_score;
+    delete dataUpdate.is_blacklisted;
     const data = await model.account.findByIdAndUpdate(uid, dataUpdate, {
       new: true,
     });
