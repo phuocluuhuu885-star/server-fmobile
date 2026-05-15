@@ -840,7 +840,9 @@ const changeActiveProduct = async (req, res, next) => {
         notifyAllUsers(
             "Sản phẩm mới / Hot!",
             `Sản phẩm "${product.name}" hiện đã mở bán. Khám phá ngay!`,
-            "promotion"
+            "promotion",
+            "",
+            product._id.toString()
         );
     }
 

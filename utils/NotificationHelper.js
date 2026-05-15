@@ -8,8 +8,9 @@ const { sendNotification } = require("../config/Fcm");
  * @param {string} body Nội dung thông báo
  * @param {string} type Loại thông báo (system, promotion, v.v.)
  * @param {string} orderId ID đơn hàng (nếu có)
+ * @param {string} productId ID sản phẩm (nếu có)
  */
-const notifyAllUsers = async (title, body, type = "system", orderId = "") => {
+const notifyAllUsers = async (title, body, type = "system", orderId = "", productId = "") => {
     try {
         // 1. Lấy tất cả tài khoản là khách hàng
         const users = await accountModel.account.find({ role_id: "customer" });
@@ -24,6 +25,7 @@ const notifyAllUsers = async (title, body, type = "system", orderId = "") => {
                 content: body,
                 type: type,
                 order_id: orderId,
+                product_id: productId,
                 status: "unread"
             });
             await newNoti.save();
@@ -32,7 +34,8 @@ const notifyAllUsers = async (title, body, type = "system", orderId = "") => {
             if (user.fcmToken) {
                 await sendNotification(user.fcmToken, title, body, {
                     type: type,
-                    orderId: orderId
+                    order_id: orderId,
+                    product_id: productId
                 });
             }
         });
