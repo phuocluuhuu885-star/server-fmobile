@@ -106,6 +106,28 @@ const addOption = async (req, res, next) => {
     if (req.file) {
       dataBody.image = req.file.path;
     }
+
+    // Chuẩn hóa dữ liệu để tránh "Tím " vs "Tím"
+    if (dataBody.name_color) dataBody.name_color = dataBody.name_color.trim();
+    if (dataBody.ram) dataBody.ram = dataBody.ram.trim();
+    if (dataBody.storage_capacity) dataBody.storage_capacity = dataBody.storage_capacity.trim();
+    if (dataBody.is_original) dataBody.is_original = dataBody.is_original.trim();
+
+    // Kiểm tra trùng lặp cấu hình cho cùng một sản phẩm
+    const existingOption = await optionModel.option.findOne({
+      product_id: dataBody.product_id,
+      name_color: dataBody.name_color,
+      ram: dataBody.ram,
+      storage_capacity: dataBody.storage_capacity,
+      is_original: dataBody.is_original
+    });
+
+    if (existingOption) {
+      return res.status(400).json({ 
+        code: 400, 
+        message: "Cấu hình này đã tồn tại cho sản phẩm này. Vui lòng kiểm tra lại hoặc chỉ cập nhật số lượng của cấu hình cũ." 
+      });
+    }
     const option = new optionModel.option(dataBody);
     await option.save();
     product.option.push(option._id);
@@ -141,6 +163,29 @@ const updateOption = async (req, res, next) => {
 
     if (!option) {
       return res.status(404).json({ code: 404, message: "option not found" });
+    }
+
+    // Chuẩn hóa dữ liệu
+    if (dataBody.name_color) dataBody.name_color = dataBody.name_color.trim();
+    if (dataBody.ram) dataBody.ram = dataBody.ram.trim();
+    if (dataBody.storage_capacity) dataBody.storage_capacity = dataBody.storage_capacity.trim();
+    if (dataBody.is_original) dataBody.is_original = dataBody.is_original.trim();
+
+    // Kiểm tra xem việc cập nhật có gây trùng lặp với Option khác không
+    const duplicateCheck = await optionModel.option.findOne({
+      _id: { $ne: optionId },
+      product_id: option.product_id,
+      name_color: dataBody.name_color || option.name_color,
+      ram: dataBody.ram || option.ram,
+      storage_capacity: dataBody.storage_capacity || option.storage_capacity,
+      is_original: dataBody.is_original || option.is_original
+    });
+
+    if (duplicateCheck) {
+      return res.status(400).json({ 
+        code: 400, 
+        message: "Cập nhật thất bại: Cấu hình này đã tồn tại ở một Option khác của sản phẩm." 
+      });
     }
 
     const result = await optionModel.option.findByIdAndUpdate(
