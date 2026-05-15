@@ -152,7 +152,7 @@ const editVoucher = async (req, res, next) => {
 // [delete] /api/voucher/delete/:id
 const deleteVoucher = async (req, res, next) => {
 	try {
-	const { id } = req.query;
+	const { id } = req.params;
 		await models.voucher.findByIdAndDelete(id);
 		return res.status(200).json({ code: 200, message: "delete successfully!" });
 	} catch (error) {
