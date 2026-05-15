@@ -17,6 +17,7 @@ const optionSchema = new db.mongoose.Schema(
     battery_health: { type: String }, // Tình trạng pin (%)
     is_original: { type: String }, // Nguyên bản hay đã thay thế
     warranty_time: { type: String }, // Thời gian bảo hành
+    screen: { type: String }, // Màn hình
   },
   { timestamps: true }
 );
