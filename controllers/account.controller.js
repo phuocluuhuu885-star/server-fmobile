@@ -179,15 +179,41 @@ const changeActiveUser = async (req, res, next) => {
     }
 
     const { uid } = req.params;
+    const { reason } = req.body;
 
     const account = await model.account.findById(uid);
+    if (!account) {
+      return res.status(404).json({ code: 404, message: "User not found" });
+    }
 
     let active = !account.is_active;
+    const adminName = user.username || user.email || "Admin";
+    const logAction = active ? "Kích hoạt" : "Hủy kích hoạt";
 
-    await model.account.findByIdAndUpdate(uid, { is_active: active });
+    const updatedAccount = await model.account.findByIdAndUpdate(
+      uid,
+      {
+        is_active: active,
+        $push: {
+          admin_logs: {
+            updated_by: adminName,
+            action: logAction,
+            reason: reason || "",
+            to_time: new Date()
+          }
+        }
+      },
+      { new: true }
+    );
+
     return res
       .status(200)
-      .json({ code: 200, message: "change active user successfully" });
+      .json({
+        code: 200,
+        message: "change active user successfully",
+        is_active: active,
+        admin_logs: updatedAccount.admin_logs
+      });
   } catch (error) {
     return res.status(500).json({ code: 500, message: error.message });
   }
@@ -260,16 +286,41 @@ const changeRestrictBuy = async (req, res, next) => {
     }
 
     const { uid } = req.params;
+    const { reason } = req.body;
+
     const account = await model.account.findById(uid);
     if (!account) {
       return res.status(404).json({ code: 404, message: "User not found" });
     }
 
     let restrict = !account.restrict_buy;
-    await model.account.findByIdAndUpdate(uid, { restrict_buy: restrict });
+    const adminName = user.username || user.email || "Admin";
+    const logAction = restrict ? "Hạn chế mua hàng" : "Bỏ hạn chế mua hàng";
+
+    const updatedAccount = await model.account.findByIdAndUpdate(
+      uid,
+      {
+        restrict_buy: restrict,
+        $push: {
+          admin_logs: {
+            updated_by: adminName,
+            action: logAction,
+            reason: reason || "",
+            to_time: new Date()
+          }
+        }
+      },
+      { new: true }
+    );
+
     return res
       .status(200)
-      .json({ code: 200, message: "Change restrict buy successfully", restrict_buy: restrict });
+      .json({
+        code: 200,
+        message: "Change restrict buy successfully",
+        restrict_buy: restrict,
+        admin_logs: updatedAccount.admin_logs
+      });
   } catch (error) {
     return res.status(500).json({ code: 500, message: error.message });
   }
@@ -286,16 +337,41 @@ const changeRestrictCod = async (req, res, next) => {
     }
 
     const { uid } = req.params;
+    const { reason } = req.body;
+
     const account = await model.account.findById(uid);
     if (!account) {
       return res.status(404).json({ code: 404, message: "User not found" });
     }
 
     let restrict = !account.is_blacklisted;
-    await model.account.findByIdAndUpdate(uid, { is_blacklisted: restrict });
+    const adminName = user.username || user.email || "Admin";
+    const logAction = restrict ? "Chỉ cho thanh toán chuyển khoản" : "Cho phép thanh toán COD";
+
+    const updatedAccount = await model.account.findByIdAndUpdate(
+      uid,
+      {
+        is_blacklisted: restrict,
+        $push: {
+          admin_logs: {
+            updated_by: adminName,
+            action: logAction,
+            reason: reason || "",
+            to_time: new Date()
+          }
+        }
+      },
+      { new: true }
+    );
+
     return res
       .status(200)
-      .json({ code: 200, message: "Change restrict COD successfully", is_blacklisted: restrict });
+      .json({
+        code: 200,
+        message: "Change restrict COD successfully",
+        is_blacklisted: restrict,
+        admin_logs: updatedAccount.admin_logs
+      });
   } catch (error) {
     return res.status(500).json({ code: 500, message: error.message });
   }

@@ -22,7 +22,14 @@ const accountSchema = new db.mongoose.Schema(
     trust_score: { type: Number, default: 150, min: 0 },
     is_blacklisted: { type: Boolean, default: false },
     restrict_buy: { type: Boolean, default: false },
-
+    admin_logs: [
+      {
+        updated_by: { type: String },         // Tên admin thực hiện
+        action: { type: String },             // Hành động thực hiện
+        reason: { type: String, default: "" }, // Lý do thực hiện
+        to_time: { type: Date, default: Date.now } // Thời điểm thực hiện
+      }
+    ],
   },
   {
     timestamps: true,
