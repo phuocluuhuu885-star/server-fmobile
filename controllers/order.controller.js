@@ -63,6 +63,13 @@ const calculateTotalPrice = async (productsOrder) => {
 // 2. Hàm Tạo đơn hàng (Dùng chung cho cả COD và ZaloPay)
 const createOrderDefault = async (req, res, next) => {
 	try {
+		if (req.user && req.user.restrict_buy === true) {
+			return res.status(403).json({
+				code: 403,
+				message: "Tài khoản của bạn bị hạn chế mua hàng. Vui lòng liên hệ Admin để được hỗ trợ.",
+			});
+		}
+
 		const user_id = req.user._id;
 		const { productsOrder, info_id, payment_method, voucher_ids } = req.body;
 
@@ -244,6 +251,13 @@ const createOrder = async (req, res, next) => {
 
 const createOrderByZalo = async (req, res, next) => {
 	try {
+		if (req.user && req.user.restrict_buy === true) {
+			return res.status(403).json({
+				code: 403,
+				message: "Tài khoản của bạn bị hạn chế mua hàng. Vui lòng liên hệ Admin để được hỗ trợ.",
+			});
+		}
+
 		const user_id = req.user._id;
 		const { productsOrder, info_id, payment_status, voucher_ids } = req.body;
 
@@ -445,7 +459,8 @@ const updateOrderStatus = async (req, res, next) => {
 				await syncTrustAfterOrderStatusChange(
 					updatedOrder.user_id,
 					order.status,
-					status
+					status,
+					finalReason
 				);
 			} catch (e) {
 				console.error("trust_score sync:", e);
@@ -602,7 +617,8 @@ const updateOrder = async (req, res, next) => {
         await syncTrustAfterOrderStatusChange(
           updatedOrder.user_id,
           order.status,
-          status
+          status,
+          note
         );
       } catch (e) {
         console.error("trust_score sync (updateOrder):", e);
@@ -765,6 +781,12 @@ const cancelOrder = async (req, res, next) => {
 		}
 
 		await orderModel.order.findByIdAndUpdate(orderId, { status: "Đã hủy" }, { new: true });
+
+		try {
+			await syncTrustAfterOrderStatusChange(order.user_id, order.status, "Đã hủy", "Khách hàng tự hủy");
+		} catch (e) {
+			console.error("trust score sync err:", e);
+		}
 
 		// Restore quantities since order was in "Chờ xác nhận" (meaning deducted)
 		for (const product of order.productsOrder) {

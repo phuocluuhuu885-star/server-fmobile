@@ -9,9 +9,30 @@ const detailProfile = async (req, res, next) => {
     if (!user) {
       return res.status(404).json({ code: 404, message: "User not found" });
     }
+
+    const orderModel = require("../models/Orders");
+    const totalOrders = await orderModel.order.countDocuments({ user_id: uid });
+    const successOrders = await orderModel.order.countDocuments({ user_id: uid, status: "Đã giao hàng" });
+    const cancelledOrders = await orderModel.order.countDocuments({ user_id: uid, status: "Đã hủy" });
+    const pendingConfirmation = await orderModel.order.countDocuments({ user_id: uid, status: "Chờ xác nhận" });
+    const pendingPayment = await orderModel.order.countDocuments({ user_id: uid, status: "Chờ thanh toán" });
+    const shippingOrders = await orderModel.order.countDocuments({ user_id: uid, status: { $in: ["Chờ giao hàng", "Đang giao hàng"] } });
+
+    const orderStats = {
+      total: totalOrders,
+      success: successOrders,
+      cancelled: cancelledOrders,
+      pendingConfirmation: pendingConfirmation,
+      pendingPayment: pendingPayment,
+      shipping: shippingOrders,
+    };
+
+    const userData = user.toObject();
+    userData.orderStats = orderStats;
+
     return res
       .status(200)
-      .json({ code: 200, data: user, message: "get user success" });
+      .json({ code: 200, data: userData, message: "get user success" });
   } catch (error) {
     return res.status(500).json({ code: 500, message: error.message });
   }
@@ -228,6 +249,58 @@ const changeActiveStaff = async (req, res) => {
   
 };
 
+const changeRestrictBuy = async (req, res, next) => {
+  try {
+    const user = req.user;
+    if (user.role_id == "customer") {
+      return res.status(403).json({
+        code: 403,
+        message: "You do not have permission to use this function",
+      });
+    }
+
+    const { uid } = req.params;
+    const account = await model.account.findById(uid);
+    if (!account) {
+      return res.status(404).json({ code: 404, message: "User not found" });
+    }
+
+    let restrict = !account.restrict_buy;
+    await model.account.findByIdAndUpdate(uid, { restrict_buy: restrict });
+    return res
+      .status(200)
+      .json({ code: 200, message: "Change restrict buy successfully", restrict_buy: restrict });
+  } catch (error) {
+    return res.status(500).json({ code: 500, message: error.message });
+  }
+};
+
+const changeRestrictCod = async (req, res, next) => {
+  try {
+    const user = req.user;
+    if (user.role_id == "customer") {
+      return res.status(403).json({
+        code: 403,
+        message: "You do not have permission to use this function",
+      });
+    }
+
+    const { uid } = req.params;
+    const account = await model.account.findById(uid);
+    if (!account) {
+      return res.status(404).json({ code: 404, message: "User not found" });
+    }
+
+    let restrict = !account.is_blacklisted;
+    await model.account.findByIdAndUpdate(uid, { is_blacklisted: restrict });
+    return res
+      .status(200)
+      .json({ code: 200, message: "Change restrict COD successfully", is_blacklisted: restrict });
+  } catch (error) {
+    return res.status(500).json({ code: 500, message: error.message });
+  }
+};
+
 module.exports = {
   detailProfile,
   resetPassword,
@@ -237,4 +310,6 @@ module.exports = {
   createAccountStaff,
   changeActiveUser,
   changeActiveStaff,
+  changeRestrictBuy,
+  changeRestrictCod,
 };

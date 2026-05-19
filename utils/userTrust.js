@@ -4,7 +4,7 @@ const BLACKLIST_THRESHOLD =
 	Number(process.env.TRUST_BLACKLIST_THRESHOLD) || 50;
 
 function effectiveTrust(score) {
-	return score == null ? 100 : score;
+	return score == null ? 150 : score;
 }
 
 function isUserPaymentRestricted(accountDoc) {
@@ -32,8 +32,9 @@ async function adjustUserTrustScore(userId, delta) {
  * @param {import("mongoose").Types.ObjectId} userId
  * @param {string} previousStatus
  * @param {string} newStatus
+ * @param {string} reason
  */
-async function syncTrustAfterOrderStatusChange(userId, previousStatus, newStatus) {
+async function syncTrustAfterOrderStatusChange(userId, previousStatus, newStatus, reason = "") {
 	if (!userId || previousStatus === newStatus) return;
 
 	if (newStatus === "Đã giao hàng" && previousStatus !== "Đã giao hàng") {
@@ -42,8 +43,26 @@ async function syncTrustAfterOrderStatusChange(userId, previousStatus, newStatus
 	}
 
 	const bomFrom = ["Chờ giao hàng", "Đang giao hàng"];
-	if (newStatus === "Đã hủy" && bomFrom.includes(previousStatus)) {
+	const isBomReason = reason && (reason.toLowerCase().includes("bom") || reason.toLowerCase().includes("không nhận"));
+	if (newStatus === "Đã hủy" && (bomFrom.includes(previousStatus) || isBomReason)) {
 		await adjustUserTrustScore(userId, -50);
+		return;
+	}
+
+	if (newStatus === "Đã hủy" && previousStatus !== "Đã hủy") {
+		const startOfDay = new Date();
+		startOfDay.setHours(0, 0, 0, 0);
+
+		const orderModel = require("../models/Orders");
+		const cancelledToday = await orderModel.order.countDocuments({
+			user_id: userId,
+			status: "Đã hủy",
+			updatedAt: { $gte: startOfDay }
+		});
+
+		if (cancelledToday > 5) {
+			await adjustUserTrustScore(userId, -10);
+		}
 	}
 }
 

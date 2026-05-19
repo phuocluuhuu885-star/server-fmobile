@@ -47,6 +47,16 @@ router.put(
   middleware.checkToken,
   controller.changeActiveUser
 );
+router.put(
+  "/change-restrict-buy/:uid",
+  middleware.checkToken,
+  controller.changeRestrictBuy
+);
+router.put(
+  "/change-restrict-cod/:uid",
+  middleware.checkToken,
+  controller.changeRestrictCod
+);
 router.delete(
   "/delete-staff-account/:staffId",
   middleware.checkToken,
