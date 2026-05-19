@@ -28,7 +28,7 @@ const getVouchersForCart = async (req, res) => {
 		// Lấy thông tin các Product để biết tên
 		const ProductsModel = require("../models/Products").product;
 		const productsInfo = await ProductsModel.find({ _id: { $in: productIds } });
-		
+
 		// Nhóm productIds theo tên sản phẩm
 		const nameToIdsMap = new Map();
 		productsInfo.forEach(p => {
@@ -152,7 +152,7 @@ const editVoucher = async (req, res, next) => {
 // [delete] /api/voucher/delete/:id
 const deleteVoucher = async (req, res, next) => {
 	try {
-	const { id } = req.params;
+		const { id } = req.params;
 		await models.voucher.findByIdAndDelete(id);
 		return res.status(200).json({ code: 200, message: "delete successfully!" });
 	} catch (error) {
