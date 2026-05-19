@@ -254,13 +254,18 @@ const detailProduct = async (req, res, next) => {
     if (!product) {
       return res.status(404).json({ error: "Product not found" });
     }
-    const optionImages = product.option.map((option) => option.image);
-    let result = {
-      ...product._doc
-    };
+    const optionImages = product.option
+      .map((option) => option.image)
+      .filter((img) => img && img !== "don't not value");
+    
+    let result = product.toObject();
+    if (!result.images || result.images.length === 0) {
+      result.images = optionImages;
+    }
+
     return res.status(200).json({
       code: 200,
-      result: product,
+      result: result,
       message: "get detail product successfull",
     });
   } catch (error) {
@@ -763,15 +768,31 @@ const getMinMaxPrices = async (product_id) => {
 
 const getImageHotOption = async (product_id) => {
   try {
-    const options = await optionModel.option.find(
+    // 1. Tìm option nổi bật (hot_option: true) có ảnh hợp lệ
+    let options = await optionModel.option.find(
       { product_id: product_id, hot_option: true },
       "image"
     );
-    if (options.length > 0) {
+    if (options.length > 0 && options[0].image && options[0].image !== "don't not value") {
       return options[0].image;
-    } else {
-      return "don't not value";
     }
+
+    // 2. Dự phòng 1: Lấy option đầu tiên bất kỳ có ảnh hợp lệ của sản phẩm này
+    options = await optionModel.option.find(
+      { product_id: product_id },
+      "image"
+    );
+    if (options.length > 0 && options[0].image && options[0].image !== "don't not value") {
+      return options[0].image;
+    }
+
+    // 3. Dự phòng 2: Lấy ảnh trực tiếp trong schema Product nếu có
+    const product = await productModel.product.findById(product_id, "images");
+    if (product && product.images && product.images.length > 0) {
+      return product.images[0];
+    }
+
+    return "don't not value";
   } catch (error) {
     console.error(error.message);
     throw error;
