@@ -20,7 +20,7 @@ async function adjustUserTrustScore(userId, delta) {
 		.select("trust_score is_blacklisted");
 	if (!acc) return;
 	const current = effectiveTrust(acc.trust_score);
-	const next = Math.max(0, current + delta);
+	const next = Math.min(150, Math.max(0, current + delta));
 	const is_blacklisted = next < BLACKLIST_THRESHOLD;
 	await accountModel.account.findByIdAndUpdate(userId, {
 		trust_score: next,
@@ -38,7 +38,7 @@ async function syncTrustAfterOrderStatusChange(userId, previousStatus, newStatus
 	if (!userId || previousStatus === newStatus) return;
 
 	if (newStatus === "Đã giao hàng" && previousStatus !== "Đã giao hàng") {
-		await adjustUserTrustScore(userId, 5);
+		await adjustUserTrustScore(userId, 10);
 		return;
 	}
 
