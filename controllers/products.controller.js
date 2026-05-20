@@ -113,6 +113,19 @@ const addOption = async (req, res, next) => {
     if (dataBody.storage_capacity) dataBody.storage_capacity = dataBody.storage_capacity.trim();
     if (dataBody.is_original) dataBody.is_original = dataBody.is_original.trim();
 
+    // Tự động lấy ảnh của option trước đó cùng màu nếu không tải lên ảnh mới
+    const hasNoImage = !dataBody.image || dataBody.image === "" || dataBody.image === "don't not value";
+    if (hasNoImage && dataBody.name_color) {
+      const optionWithSameColor = await optionModel.option.findOne({
+        product_id: dataBody.product_id,
+        name_color: dataBody.name_color,
+        image: { $exists: true, $ne: "", $nin: ["don't not value", null] }
+      });
+      if (optionWithSameColor) {
+        dataBody.image = optionWithSameColor.image;
+      }
+    }
+
     // Kiểm tra trùng lặp cấu hình cho cùng một sản phẩm
     const existingOption = await optionModel.option.findOne({
       product_id: dataBody.product_id,

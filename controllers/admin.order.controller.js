@@ -8,7 +8,7 @@ const {
   isGhtkDelivered,
 } = require("../services/ghtk.service");
 
-const CONFIRMABLE_STATUSES = ["Chờ xác nhận", "Chờ giao hàng"];
+const CONFIRMABLE_STATUSES = ["Chờ xác nhận", "Chờ giao hàng", "Đã thanh toán"];
 
 function assertAdminStaff(req, res) {
   const role = req.user?.role_id;

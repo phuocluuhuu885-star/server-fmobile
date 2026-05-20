@@ -188,28 +188,65 @@ const zlCallback = async (req, res) => {
 	res.json(result);
 };
 
+const scheduleQROrderCleanup = (orderId) => {
+	// 15 minutes = 15 * 60 * 1000 ms
+	setTimeout(async () => {
+		try {
+			const order = await orderModel.order.findById(orderId);
+			if (order && order.status === "Chờ thanh toán" && order.payment_method === 3) {
+				console.log(`Auto-cancelling QR order ${orderId} due to timeout...`);
+				await orderModel.order.findByIdAndDelete(orderId);
+
+				// Restore quantities
+				for (const product of order.productsOrder) {
+					await optionModel.option.findByIdAndUpdate(
+						product.option_id,
+						{ $inc: { quantity: product.quantity, soldQuantity: -product.quantity } }
+					);
+				}
+				if (order.voucher_ids && order.voucher_ids.length > 0) {
+					const VoucherModel = require("../models/Voucher").voucher;
+					for (const v_id of order.voucher_ids) {
+						await VoucherModel.findByIdAndUpdate(v_id, { $inc: { quantity: 1 } });
+					}
+				}
+			}
+		} catch (err) {
+			console.error(`Error during QR order auto-cleanup for ${orderId}:`, err);
+		}
+	}, 15 * 60 * 1000);
+};
+
 const createOrder = async (req, res, next) => {
 	try {
 		const user_id = req.user._id;
-		const { productsOrder, info_id, voucher_ids } = req.body;
+		const { productsOrder, info_id, voucher_ids, payment_method } = req.body;
 		console.log("test" + productsOrder);
 
-		try {
-			await assertCodAllowedForUser(user_id);
-		} catch (e) {
-			if (e.code === "PAYMENT_RESTRICTED") {
-				return res.status(403).json({ code: 403, message: e.message });
+		if (payment_method !== 3) {
+			try {
+				await assertCodAllowedForUser(user_id);
+			} catch (e) {
+				if (e.code === "PAYMENT_RESTRICTED") {
+					return res.status(403).json({ code: 403, message: e.message });
+				}
+				throw e;
 			}
-			throw e;
 		}
 
 		const total_price = await calculateTotalPrice(productsOrder);
-		// Sử dụng đối tượng để theo dõi store_id và productsOrder tương ứng
+		
+		const isQR = payment_method === 3;
+		const initialStatus = isQR ? "Chờ thanh toán" : "Chờ xác nhận";
+
 		const newOrder = new orderModel.order({
 			user_id,
 			productsOrder,
 			total_price,
 			info_id,
+			payment_method: payment_method || 1,
+			status: initialStatus,
+			payment_status: false,
 			voucher_ids: voucher_ids || [],
 		});
 
@@ -238,13 +275,76 @@ const createOrder = async (req, res, next) => {
 			}
 		}
 
+		// Nếu là QR, lập lịch tự động hủy sau 15 phút
+		if (isQR) {
+			scheduleQROrderCleanup(savedOrder._id);
+		}
+
 		return res.status(201).json({
 			code: 201,
 			result: savedOrder,
-			message: "created order successfully",
+			message: isQR ? "Đang chờ thanh toán QR" : "created order successfully",
 		});
 	} catch (error) {
 		console.log(error);
+		return res.status(500).json({ code: 500, message: error.message });
+	}
+};
+
+const cancelOrderQR = async (req, res, next) => {
+	try {
+		const { orderId } = req.params;
+		const order = await orderModel.order.findById(orderId);
+
+		if (!order) {
+			return res.status(404).json({ code: 404, message: "Order not found" });
+		}
+
+		if (order.status !== "Chờ thanh toán") {
+			return res.status(400).json({ code: 400, message: "Order is not in pending payment status" });
+		}
+
+		await orderModel.order.findByIdAndDelete(orderId);
+
+		// Restore quantities
+		for (const product of order.productsOrder) {
+			await optionModel.option.findByIdAndUpdate(
+				product.option_id,
+				{ $inc: { quantity: product.quantity, soldQuantity: -product.quantity } }
+			);
+		}
+		if (order.voucher_ids && order.voucher_ids.length > 0) {
+			const VoucherModel = require("../models/Voucher").voucher;
+			for (const v_id of order.voucher_ids) {
+				await VoucherModel.findByIdAndUpdate(v_id, { $inc: { quantity: 1 } });
+			}
+		}
+
+		return res.status(200).json({ code: 200, message: "QR Order cancelled and deleted successfully" });
+	} catch (error) {
+		return res.status(500).json({ code: 500, message: error.message });
+	}
+};
+
+const confirmOrderQR = async (req, res, next) => {
+	try {
+		const { orderId } = req.params;
+		const order = await orderModel.order.findById(orderId);
+
+		if (!order) {
+			return res.status(404).json({ code: 404, message: "Order not found" });
+		}
+
+		if (order.status !== "Chờ thanh toán") {
+			return res.status(400).json({ code: 400, message: "Order is not in pending payment status" });
+		}
+
+		order.status = "Đã thanh toán";
+		order.payment_status = true;
+		await order.save();
+
+		return res.status(200).json({ code: 200, message: "QR Order confirmed successfully" });
+	} catch (error) {
 		return res.status(500).json({ code: 500, message: error.message });
 	}
 };
@@ -336,7 +436,11 @@ const getOrdersByUserId = async (req, res, next) => {
 
 		const queryCondition = { user_id: userId };
 		if (status) {
-			queryCondition.status = status;
+			if (status === "Chờ xác nhận") {
+				queryCondition.status = { $in: ["Chờ xác nhận", "Đã thanh toán"] };
+			} else {
+				queryCondition.status = status;
+			}
 		}
 
 		const orders = await orderModel.order.find(queryCondition).sort({ updatedAt: -1 }).populate(["user_id", "info_id"]);
@@ -893,4 +997,6 @@ module.exports = {
 	createOrderByZalo,
 	createOrderDefault,
 	zlCallback,
+	cancelOrderQR,
+	confirmOrderQR,
 };

@@ -5,6 +5,8 @@ var middleware = require("../middleware/auth.middleware");
 
 router.post("/create-order", middleware.checkToken, controller.createOrder);
 router.post("/create-order-by-zalo", middleware.checkToken, controller.createOrderByZalo);
+router.delete("/qr/cancel/:orderId", middleware.checkToken, controller.cancelOrderQR);
+router.put("/qr/confirm/:orderId", middleware.checkToken, controller.confirmOrderQR);
 
 
 router.put(

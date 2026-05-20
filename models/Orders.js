@@ -20,6 +20,7 @@ const orderSchema = new db.mongoose.Schema(
       enum: [
         "Chờ thanh toán",
         "Chờ xác nhận",
+        "Đã thanh toán",
         "Chờ giao hàng",
         "shipping",
         "Đang giao hàng",
