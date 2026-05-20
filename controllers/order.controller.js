@@ -395,10 +395,27 @@ const updateOrderStatus = async (req, res, next) => {
 
 		const role = req.user?.role_id;
 		const isStaff = role === "admin" || role === "staff";
+
+		const logisticsStatuses = new Set([
+			"shipping",
+			"Đang giao hàng",
+			"Đã giao hàng",
+		]);
+		if (logisticsStatuses.has(status) && order.status !== status) {
+			return res.status(409).json({
+				code: 409,
+				message:
+					"Không thể đổi trạng thái giao hàng thủ công. Dùng «Xác nhận đơn» (GHTK) và «Làm mới trạng thái GHTK».",
+			});
+		}
+
 		if (
 			status === "Đã hủy" &&
 			(order.status === "Đã giao hàng" ||
-				((order.status === "Chờ giao hàng" || order.status === "Đang giao hàng") && !isStaff))
+				((order.status === "Chờ giao hàng" ||
+					order.status === "Đang giao hàng" ||
+					order.status === "shipping") &&
+					!isStaff))
 		) {
 			return res.status(409).json({ code: 409, message: "Don't change status order" });
 		}
@@ -525,6 +542,23 @@ const updateOrder = async (req, res, next) => {
     const order = await orderModel.order.findById(orderId);
     if (!order) {
       return res.status(404).json({ code: 404, message: "order not found" });
+    }
+
+    const logisticsStatuses = new Set([
+      "shipping",
+      "Đang giao hàng",
+      "Đã giao hàng",
+    ]);
+    if (
+      status &&
+      logisticsStatuses.has(status) &&
+      order.status !== status
+    ) {
+      return res.status(409).json({
+        code: 409,
+        message:
+          "Không thể đổi trạng thái giao hàng thủ công. Dùng API GHTK (xác nhận / tracking).",
+      });
     }
 
     if (info_id && typeof info_id === "object" && order.info_id) {

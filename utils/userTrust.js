@@ -42,9 +42,9 @@ async function syncTrustAfterOrderStatusChange(userId, previousStatus, newStatus
 		return;
 	}
 
-	const bomFrom = ["Chờ giao hàng", "Đang giao hàng"];
-	const isBomReason = reason && (reason.toLowerCase().includes("bom") || reason.toLowerCase().includes("không nhận"));
-	if (newStatus === "Đã hủy" && (bomFrom.includes(previousStatus) || isBomReason)) {
+
+	const bomFrom = ["Chờ giao hàng", "Đang giao hàng", "shipping"];
+	if (newStatus === "Đã hủy" && bomFrom.includes(previousStatus)) {
 		await adjustUserTrustScore(userId, -50);
 		return;
 	}

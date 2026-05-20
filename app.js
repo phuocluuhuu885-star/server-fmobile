@@ -1,3 +1,6 @@
+require('dotenv').config();
+var path = require("path"); // Đưa dòng này lên hàng đầu tiên
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 var createError = require("http-errors");
 var express = require("express");
 var path = require("path");
@@ -6,12 +9,14 @@ var logger = require("morgan");
 var cors = require("cors");
 const admin = require('firebase-admin');
 //const serviceAccount = require("./serviceAccountKey.json")
+
 var siteRouter = require("./routers/site.route");
 var productsRouter = require("./routers/products.route");
 var categoryRouter = require("./routers/category.route");
 var reviewRoute = require("./routers/productRate.route");
 var userRouter = require("./routers/account.route");
 var orderRoute = require("./routers/order.route");
+var adminOrderRoute = require("./routers/admin.order.route");
 var cartRoute = require("./routers/cart.route");
 var infoRoute = require("./routers/info.route");
 var bannerRoute = require("./routers/banner.route");
@@ -46,6 +51,7 @@ app.use("/api/user", userRouter);
 app.use("/api/store", storeRoute);
 app.use("/api/review", reviewRoute);
 app.use("/api/order", orderRoute);
+app.use("/api/admin/order", adminOrderRoute);
 app.use("/api/cart", cartRoute);
 app.use("/api/info", infoRoute);
 app.use("/api/banner", bannerRoute);
