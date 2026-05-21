@@ -524,6 +524,9 @@ const updateOrderStatus = async (req, res, next) => {
 			return res.status(409).json({ code: 409, message: "Don't change status order" });
 		}
 		const updateData = { status };
+		if (status === "Đã thanh toán") {
+			updateData.payment_status = true;
+		}
 		if (status === "Đã giao hàng" && order.status !== "Đã giao hàng" && !order.completedAt) {
 			updateData.completedAt = new Date();
 		}
