@@ -206,6 +206,73 @@ const changeActiveUser = async (req, res, next) => {
       { new: true }
     );
 
+    // Nếu tài khoản bị vô hiệu hóa (khóa)
+    if (!active) {
+      try {
+        const orderModel = require("../models/Orders");
+        const optionModel = require("../models/Option");
+        const VoucherModel = require("../models/Voucher").voucher;
+
+        // 1. Tìm tất cả đơn hàng chưa hoàn thành của người dùng này
+        const uncompletedOrders = await orderModel.order.find({
+          user_id: uid,
+          status: { $nin: ["Đã giao hàng", "Đã hủy"] }
+        });
+
+        // 2. Lặp qua từng đơn hàng để thực hiện hủy và hoàn tài nguyên
+        for (const order of uncompletedOrders) {
+          try {
+            const oldStatus = order.status;
+            order.status = "Đã hủy";
+            order.reason = "Tự động hủy do tài khoản bị khóa bởi Admin";
+            
+            // Thêm log cập nhật đơn hàng
+            order.admin_update_logs.push({
+              updated_by: adminName,
+              action: "Hủy tự động (Khóa tài khoản)",
+              details: `Trạng thái: ${oldStatus} -> Đã hủy (Lý do: Tài khoản bị khóa)`,
+              note: reason || "Admin khóa tài khoản",
+              to_time: new Date()
+            });
+
+            // Lưu đơn hàng đã hủy
+            await order.save();
+
+            // Hoàn trả số lượng kho cho từng sản phẩm/tùy chọn (nếu đã trừ)
+            const hasStockBeenDeducted = (oldStatus !== "Chờ thanh toán" || order.payment_method === 3);
+            if (hasStockBeenDeducted) {
+              for (const product of order.productsOrder) {
+                if (product.option_id) {
+                  await optionModel.option.findByIdAndUpdate(
+                    product.option_id,
+                    { 
+                      $inc: { 
+                        quantity: product.quantity, 
+                        soldQuantity: -product.quantity 
+                      } 
+                    }
+                  );
+                }
+              }
+
+              // Hoàn trả voucher nếu có áp dụng
+              if (order.voucher_ids && order.voucher_ids.length > 0) {
+                for (const v_id of order.voucher_ids) {
+                  await VoucherModel.findByIdAndUpdate(v_id, {
+                    $inc: { quantity: 1 }
+                  });
+                }
+              }
+            }
+          } catch (err) {
+            console.error(`Lỗi khi tự động hủy đơn hàng ${order._id} do khóa tài khoản:`, err);
+          }
+        }
+      } catch (err) {
+        console.error("Lỗi khi quét đơn hàng để tự động hủy do khóa tài khoản:", err);
+      }
+    }
+
     return res
       .status(200)
       .json({
