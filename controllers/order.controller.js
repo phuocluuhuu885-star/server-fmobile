@@ -599,7 +599,9 @@ const updateOrderStatus = async (req, res, next) => {
             const filtered = productNames.filter(Boolean);
             const productPreview = filtered.length > 2 ? filtered.slice(0, 2).join(', ') + ', ...' : filtered.join(', ');
             const title = "🛒 Cập nhật trạng thái đơn hàng";
-            const body = `Bạn có đơn hàng mới: ${productPreview} – ${status}`;
+            const body = productPreview 
+                ? `Đơn hàng (${productPreview}) của bạn đã được cập nhật trạng thái: ${status}`
+                : `Đơn hàng của bạn đã được cập nhật trạng thái: ${status}`;
             
             // Lưu thông báo vào CSDL để app có thể hiển thị trong tab Thông báo
             const notifiModel = require("../models/Notification");
