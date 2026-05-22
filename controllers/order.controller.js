@@ -29,19 +29,19 @@ const addOrderLog = async (orderId, adminName, action, details, note = "") => {
 };
 
 const deleteOrder = async (req, res) => {
-    try {
-        const orderId = req.params.id; // Lấy ID từ URL
+	try {
+		const orderId = req.params.id; // Lấy ID từ URL
 
-        const deletedOrder = await orderModel.order.findByIdAndDelete(orderId);
+		const deletedOrder = await orderModel.order.findByIdAndDelete(orderId);
 
-        if (!deletedOrder) {
-            return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
-        }
+		if (!deletedOrder) {
+			return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
+		}
 
-        res.status(200).json({ message: "Xóa đơn hàng thành công", id: orderId });
-    } catch (error) {
-        res.status(500).json({ message: "Lỗi Server", error: error.message });
-    }
+		res.status(200).json({ message: "Xóa đơn hàng thành công", id: orderId });
+	} catch (error) {
+		res.status(500).json({ message: "Lỗi Server", error: error.message });
+	}
 };
 
 const calculateTotalPrice = async (productsOrder) => {
@@ -235,7 +235,7 @@ const createOrder = async (req, res, next) => {
 		}
 
 		const total_price = await calculateTotalPrice(productsOrder);
-		
+
 		const isQR = payment_method === 3;
 		const initialStatus = isQR ? "Chờ thanh toán" : "Chờ xác nhận";
 
@@ -346,6 +346,126 @@ const confirmOrderQR = async (req, res, next) => {
 		return res.status(200).json({ code: 200, message: "QR Order confirmed successfully" });
 	} catch (error) {
 		return res.status(500).json({ code: 500, message: error.message });
+	}
+};
+
+const sepayWebhook = async (req, res, next) => {
+	try {
+		const authHeader = req.headers['authorization'];
+		const apiKey = process.env.SEPAY_WEBHOOK_API_KEY;
+		console.log("=== SEPAY WEBHOOK DEBUG ===");
+		console.log("Headers nhận được:", JSON.stringify(req.headers, null, 2));
+		console.log("Authorization header:", authHeader);
+		console.log("Expected:", apiKey ? `Apikey ${apiKey}` : "(Không có SEPAY_WEBHOOK_API_KEY trong .env)");
+		console.log("Body:", JSON.stringify(req.body, null, 2));
+		console.log("===========================");
+
+		if (apiKey && authHeader !== `Apikey ${apiKey}`) {
+			console.log("❌ Xác thực thất bại - Header không khớp");
+			return res.status(401).json({ success: false, message: "Unauthorized" });
+		}
+		console.log("✅ Xác thực thành công");
+
+		const { id, transferType, transferAmount, content } = req.body;
+
+		if (transferType !== 'in') {
+			return res.status(200).json({ success: true, message: "Ignore outgoing transaction" });
+		}
+
+		const sepayTransId = `sepay_${id}`;
+		const existingOrder = await orderModel.order.findOne({ app_trans_id: sepayTransId });
+		if (existingOrder) {
+			return res.status(200).json({ success: true, message: "Transaction already processed" });
+		}
+
+		const orderIdMatch = content ? content.match(/[0-9a-fA-F]{24}/) : null;
+		if (!orderIdMatch) {
+			return res.status(400).json({ success: false, message: "No order ID found in transaction content" });
+		}
+
+		const orderId = orderIdMatch[0];
+		const order = await orderModel.order.findById(orderId);
+
+		if (!order) {
+			console.log(`❌ Order ${orderId} not found`);
+			return res.status(404).json({
+				success: false,
+				message: "Order not found"
+			});
+		}
+
+		const paidAmount = Number(transferAmount);
+		const orderAmount = Number(order.total_price);
+
+		console.log("transferAmount:", transferAmount);
+		console.log("typeof transferAmount:", typeof transferAmount);
+		console.log("paidAmount:", paidAmount);
+		console.log("orderAmount:", orderAmount);
+
+		if (paidAmount < orderAmount) {
+
+			console.log("❌ THANH TOÁN KHÔNG ĐỦ");
+
+			console.log({
+				orderId: order._id,
+				expectedAmount: orderAmount,
+				receivedAmount: paidAmount,
+				content
+			});
+
+			return res.status(400).json({
+				success: false,
+				message: `Số tiền không đủ. Cần ${orderAmount} nhưng chỉ nhận ${paidAmount}`
+			});
+		}
+
+		order.app_trans_id = sepayTransId;
+
+		if (order.status === "Chờ thanh toán") {
+			order.status = "Đã thanh toán";
+			order.payment_status = true;
+			await order.save();
+
+			try {
+				const user = await accountModel.account.findById(order.user_id).lean();
+				if (user) {
+					const productNames = await Promise.all(order.productsOrder.map(async (po) => {
+						const opt = await optionModel.option.findById(po.option_id).populate('product_id');
+						return opt?.product_id?.name?.trim();
+					}));
+					const filtered = productNames.filter(Boolean);
+					const productPreview = filtered.length > 2 ? filtered.slice(0, 2).join(', ') + ', ...' : filtered.join(', ');
+					const title = "🛒 Cập nhật trạng thái đơn hàng";
+					const body = productPreview
+						? `Đơn hàng (${productPreview}) của bạn đã được cập nhật trạng thái: Đã thanh toán`
+						: `Đơn hàng của bạn đã được cập nhật trạng thái: Đã thanh toán`;
+
+					const notifiModel = require("../models/Notification");
+					const newNoti = new notifiModel.notifi({
+						sender_id: order.user_id, // Gửi từ hệ thống/chính user để hiển thị thông báo
+						receiver_id: order.user_id,
+						content: body,
+						order_id: String(order._id),
+						status: "unread",
+						type: "wfc"
+					});
+					await newNoti.save();
+
+					if (user.fcmToken) {
+						await sendNotification(user.fcmToken, title, body, { order_id: String(order._id), status: "Đã thanh toán" });
+					}
+				}
+			} catch (e) {
+				console.error('Lỗi gửi thông báo trạng thái đơn hàng (SePay Webhook):', e);
+			}
+		} else {
+			await order.save();
+		}
+
+		return res.status(200).json({ success: true, message: "Webhook processed successfully" });
+	} catch (error) {
+		console.error("SePay Webhook Error:", error);
+		return res.status(500).json({ success: false, message: error.message });
 	}
 };
 
@@ -532,12 +652,12 @@ const updateOrderStatus = async (req, res, next) => {
 		if (status === "Đã giao hàng" && order.status !== "Đã giao hàng" && !order.completedAt) {
 			updateData.completedAt = new Date();
 		}
-		
+
 		const finalReason = note || reason || "";
 		if (status === "Đã hủy" && finalReason) {
-		    updateData.reason = finalReason;
+			updateData.reason = finalReason;
 		}
-		
+
 		const updatedOrder = await orderModel.order.findByIdAndUpdate(orderId, updateData, { new: true });
 
 		// Check if the order status is updated successfully
@@ -593,192 +713,193 @@ const updateOrderStatus = async (req, res, next) => {
 			}
 		}
 
-    // ---- Send push notification to user about status change ----
-    try {
-        const user = await accountModel.account.findById(updatedOrder.user_id).lean();
-        if (user) {
-            const productNames = await Promise.all(updatedOrder.productsOrder.map(async (po) => {
-                const opt = await optionModel.option.findById(po.option_id).populate('product_id');
-                return opt?.product_id?.name?.trim();
-            }));
-            const filtered = productNames.filter(Boolean);
-            const productPreview = filtered.length > 2 ? filtered.slice(0, 2).join(', ') + ', ...' : filtered.join(', ');
-            const title = "🛒 Cập nhật trạng thái đơn hàng";
-            const body = productPreview 
-                ? `Đơn hàng (${productPreview}) của bạn đã được cập nhật trạng thái: ${status}`
-                : `Đơn hàng của bạn đã được cập nhật trạng thái: ${status}`;
-            
-            // Lưu thông báo vào CSDL để app có thể hiển thị trong tab Thông báo
-            const notifiModel = require("../models/Notification");
-            const newNoti = new notifiModel.notifi({
-                sender_id: req.user ? req.user._id : updatedOrder.user_id, // Admin hoặc hệ thống
-                receiver_id: updatedOrder.user_id,
-                content: body,
-                order_id: String(orderId),
-                status: "unread",
-                type: "wfc" // Dùng type tương ứng (tuỳ chỉnh theo status nếu cần)
-            });
-            await newNoti.save();
+		// ---- Send push notification to user about status change ----
+		try {
+			const user = await accountModel.account.findById(updatedOrder.user_id).lean();
+			if (user) {
+				const productNames = await Promise.all(updatedOrder.productsOrder.map(async (po) => {
+					const opt = await optionModel.option.findById(po.option_id).populate('product_id');
+					return opt?.product_id?.name?.trim();
+				}));
+				const filtered = productNames.filter(Boolean);
+				const productPreview = filtered.length > 2 ? filtered.slice(0, 2).join(', ') + ', ...' : filtered.join(', ');
+				const title = "🛒 Cập nhật trạng thái đơn hàng";
+				const body = productPreview
+					? `Đơn hàng (${productPreview}) của bạn đã được cập nhật trạng thái: ${status}`
+					: `Đơn hàng của bạn đã được cập nhật trạng thái: ${status}`;
 
-            // Chỉ gửi push nếu user có token
-            if (user.fcmToken) {
-                await sendNotification(user.fcmToken, title, body, { order_id: String(orderId), status: String(status) });
-            }
-        }
-    } catch (e) {
-        console.error('Lỗi gửi thông báo trạng thái đơn hàng:', e);
-    }
-    
-    const finalOrder = await orderModel.order.findById(orderId).lean();
-    return res.status(200).json({ code: 200, result: finalOrder, message: "Update status order successfully" });
+				// Lưu thông báo vào CSDL để app có thể hiển thị trong tab Thông báo
+				const notifiModel = require("../models/Notification");
+				const newNoti = new notifiModel.notifi({
+					sender_id: req.user ? req.user._id : updatedOrder.user_id, // Admin hoặc hệ thống
+					receiver_id: updatedOrder.user_id,
+					content: body,
+					order_id: String(orderId),
+					status: "unread",
+					type: "wfc" // Dùng type tương ứng (tuỳ chỉnh theo status nếu cần)
+				});
+				await newNoti.save();
+
+				// Chỉ gửi push nếu user có token
+				if (user.fcmToken) {
+					await sendNotification(user.fcmToken, title, body, { order_id: String(orderId), status: String(status) });
+				}
+			}
+		} catch (e) {
+			console.error('Lỗi gửi thông báo trạng thái đơn hàng:', e);
+		}
+
+		const finalOrder = await orderModel.order.findById(orderId).lean();
+		return res.status(200).json({ code: 200, result: finalOrder, message: "Update status order successfully" });
 	} catch (error) {
 		console.log(error);
 		return res.status(500).json({ code: 500, message: error.message });
 	}
 };
 const updateOrder = async (req, res, next) => {
-  try {
-    const { orderId } = req.params;
-    const {
-      status,
-      payment_status,
-      payment_method,
-      delivery_method,
-      ip,
-      info_id,
-      productsOrder = [],
-      note,
-    } = req.body;
+	try {
+		const { orderId } = req.params;
+		const {
+			status,
+			payment_status,
+			payment_method,
+			delivery_method,
+			ip,
+			info_id,
+			productsOrder = [],
+			note,
+		} = req.body;
 
-    const order = await orderModel.order.findById(orderId);
-    if (!order) {
-      return res.status(404).json({ code: 404, message: "order not found" });
-    }
+		const order = await orderModel.order.findById(orderId);
+		if (!order) {
+			return res.status(404).json({ code: 404, message: "order not found" });
+		}
 
-    const logisticsStatuses = new Set([
-      "shipping",
-      "Đang giao hàng",
-      "Đã giao hàng",
-    ]);
-    if (
-      status &&
-      logisticsStatuses.has(status) &&
-      order.status !== status
-    ) {
-      return res.status(409).json({
-        code: 409,
-        message:
-          "Không thể đổi trạng thái giao hàng thủ công. Dùng API GHTK (xác nhận / tracking).",
-      });
-    }
+		const logisticsStatuses = new Set([
+			"shipping",
+			"Đang giao hàng",
+			"Đã giao hàng",
+		]);
+		if (
+			status &&
+			logisticsStatuses.has(status) &&
+			order.status !== status
+		) {
+			return res.status(409).json({
+				code: 409,
+				message:
+					"Không thể đổi trạng thái giao hàng thủ công. Dùng API GHTK (xác nhận / tracking).",
+			});
+		}
 
-    if (info_id && typeof info_id === "object" && order.info_id) {
-      await infoModel.info.findByIdAndUpdate(order.info_id, {
-        name: info_id.name,
-        address: info_id.address,
-        phone_number: info_id.phone_number,
-      });
-    }
+		if (info_id && typeof info_id === "object" && order.info_id) {
+			await infoModel.info.findByIdAndUpdate(order.info_id, {
+				name: info_id.name,
+				address: info_id.address,
+				phone_number: info_id.phone_number,
+			});
+		}
 
-    let total_price = 0;
-    const normalizedProducts = await Promise.all(
-      (productsOrder || []).map(async (product) => {
-        const quantity = Number(product.quantity || 1);
-        const discountValue = Number(product.discount_value || 0);
-        const customPrice = Number(product.custom_price || 0);
-        let unitPrice = customPrice;
+		let total_price = 0;
+		const normalizedProducts = await Promise.all(
+			(productsOrder || []).map(async (product) => {
+				const quantity = Number(product.quantity || 1);
+				const discountValue = Number(product.discount_value || 0);
+				const customPrice = Number(product.custom_price || 0);
+				let unitPrice = customPrice;
 
-        if (!unitPrice && product.option_id) {
-          const option = await optionModel.option.findById(product.option_id);
-          unitPrice = Number(option?.price || 0);
-        }
+				if (!unitPrice && product.option_id) {
+					const option = await optionModel.option.findById(product.option_id);
+					unitPrice = Number(option?.price || 0);
+				}
 
-        const finalPrice = Math.max(unitPrice - (unitPrice * discountValue) / 100, 0);
-        total_price += finalPrice * quantity;
+				const finalPrice = Math.max(unitPrice - (unitPrice * discountValue) / 100, 0);
+				total_price += finalPrice * quantity;
 
-        return {
-          option_id: product.option_id || null,
-          quantity,
-          discount_value: Math.round(discountValue),
-          custom_name: product.custom_name || "",
-          custom_price: customPrice,
-        };
-      })
-    );
+				return {
+					option_id: product.option_id || null,
+					quantity,
+					discount_value: Math.round(discountValue),
+					custom_name: product.custom_name || "",
+					custom_price: customPrice,
+				};
+			})
+		);
 
-    const nextPaymentMethod =
-      payment_method !== undefined && payment_method !== null
-        ? payment_method
-        : order.payment_method;
-    if (nextPaymentMethod === 1) {
-      try {
-        await assertCodAllowedForUser(order.user_id);
-      } catch (e) {
-        if (e.code === "PAYMENT_RESTRICTED") {
-          return res.status(403).json({ code: 403, message: e.message });
-        }
-        throw e;
-      }
-    }
+		const nextPaymentMethod =
+			payment_method !== undefined && payment_method !== null
+				? payment_method
+				: order.payment_method;
+		if (nextPaymentMethod === 1) {
+			try {
+				await assertCodAllowedForUser(order.user_id);
+			} catch (e) {
+				if (e.code === "PAYMENT_RESTRICTED") {
+					return res.status(403).json({ code: 403, message: e.message });
+				}
+				throw e;
+			}
+		}
 
-    const updateData = {
-        status,
-        payment_status,
-        payment_method,
-        delivery_method,
-        ip,
-        productsOrder: normalizedProducts,
-        total_price: Math.round(total_price),
-    };
+		const updateData = {
+			status,
+			payment_status,
+			payment_method,
+			delivery_method,
+			ip,
+			productsOrder: normalizedProducts,
+			total_price: Math.round(total_price),
+		};
 
-    if (status === "Đã giao hàng" && order.status !== "Đã giao hàng" && !order.completedAt) {
-        updateData.completedAt = new Date();
-    }
+		if (status === "Đã giao hàng" && order.status !== "Đã giao hàng" && !order.completedAt) {
+			updateData.completedAt = new Date();
+		}
 
-    const updatedOrder = await orderModel.order.findByIdAndUpdate(
-      orderId,
-      updateData,
-      { new: true }
-    );
+		const updatedOrder = await orderModel.order.findByIdAndUpdate(
+			orderId,
+			updateData,
+			{ new: true }
+		);
 
-    if (updatedOrder) {
-        let updateDetails = [];
-        if (order.status !== status) updateDetails.push(`Trạng thái: ${order.status} -> ${status}`);
-        if (order.payment_status !== payment_status) updateDetails.push(`Thanh toán: ${order.payment_status} -> ${payment_status}`);
-        if (order.total_price !== total_price) updateDetails.push(`Tổng tiền: ${order.total_price} -> ${total_price}`);
-        
-        let detailsStr = updateDetails.length > 0 ? updateDetails.join(', ') : "Cập nhật thông tin đơn hàng/sản phẩm";
-        
-        const adminName = req.user ? (req.user.username || req.user.full_name || req.user.email || "Admin") : "System";
-        await addOrderLog(orderId, adminName, "Sửa đơn hàng", detailsStr, note || "");
-    }
+		if (updatedOrder) {
+			let updateDetails = [];
+			if (order.status !== status) updateDetails.push(`Trạng thái: ${order.status} -> ${status}`);
+			if (order.payment_status !== payment_status) updateDetails.push(`Thanh toán: ${order.payment_status} -> ${payment_status}`);
+			if (order.total_price !== total_price) updateDetails.push(`Tổng tiền: ${order.total_price} -> ${total_price}`);
 
-    if (
-      typeof status === "string" &&
-      order.status !== status &&
-      updatedOrder?.user_id
-    ) {
-      try {
-        await syncTrustAfterOrderStatusChange(
-          updatedOrder.user_id,
-          order.status,
-          status,
-          note
-        );
-      } catch (e) {
-        console.error("trust_score sync (updateOrder):", e);
-      }
-    }
+			let detailsStr = updateDetails.length > 0 ? updateDetails.join(', ') : "Cập nhật thông tin đơn hàng/sản phẩm";
 
-    return res.status(200).json({
-      code: 200,
-      result: updatedOrder,
-      message: "update order successfully",
-    });
-  } catch (error) {
-    console.log(error);
-    return res.status(500).json({ code: 500, message: error.message });
-  }};
+			const adminName = req.user ? (req.user.username || req.user.full_name || req.user.email || "Admin") : "System";
+			await addOrderLog(orderId, adminName, "Sửa đơn hàng", detailsStr, note || "");
+		}
+
+		if (
+			typeof status === "string" &&
+			order.status !== status &&
+			updatedOrder?.user_id
+		) {
+			try {
+				await syncTrustAfterOrderStatusChange(
+					updatedOrder.user_id,
+					order.status,
+					status,
+					note
+				);
+			} catch (e) {
+				console.error("trust_score sync (updateOrder):", e);
+			}
+		}
+
+		return res.status(200).json({
+			code: 200,
+			result: updatedOrder,
+			message: "update order successfully",
+		});
+	} catch (error) {
+		console.log(error);
+		return res.status(500).json({ code: 500, message: error.message });
+	}
+};
 
 const detailOrders = async (req, res, next) => {
 	try {
@@ -990,6 +1111,7 @@ const getAllOrder = async (req, res, next) => {
 	}
 };
 
+
 module.exports = {
 	deleteOrder,
 	createOrder,
@@ -1006,4 +1128,5 @@ module.exports = {
 	zlCallback,
 	cancelOrderQR,
 	confirmOrderQR,
+	sepayWebhook,
 };

@@ -87,6 +87,28 @@ function onListening() {
   var bind = typeof addr === "string" ? "pipe " + addr : "port " + addr.port;
   debug("Listening on " + bind);
   console.log(`http://localhost:${port}`);
+  startNgrok(port);
+}
+
+async function startNgrok(portNum) {
+  const authtoken = process.env.NGROK_AUTHTOKEN;
+  if (!authtoken) {
+    console.log("ℹ️ NGROK_AUTHTOKEN không có trong .env. Bỏ qua khởi chạy ngrok.");
+    return;
+  }
+  try {
+    const ngrok = require('@ngrok/ngrok');
+    console.log("⚡ Đang khởi tạo đường truyền ngrok...");
+    const listener = await ngrok.forward({
+      proto: 'http',
+      addr: portNum,
+      authtoken: authtoken
+    });
+    console.log(`🚀 Đường truyền ngrok đã được thiết lập thành công!`);
+    console.log(`🔗 Public URL: \x1b[36m${listener.url()}\x1b[0m`);
+  } catch (err) {
+    console.error("❌ Lỗi khi khởi chạy ngrok:", err.message);
+  }
 }
 
 //socket
