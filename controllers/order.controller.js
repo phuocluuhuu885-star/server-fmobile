@@ -438,6 +438,8 @@ const getOrdersByUserId = async (req, res, next) => {
 		if (status) {
 			if (status === "Chờ xác nhận") {
 				queryCondition.status = { $in: ["Chờ xác nhận", "Đã thanh toán"] };
+			} else if (status === "Chờ/Đang giao hàng") {
+				queryCondition.status = { $in: ["Chờ giao hàng", "Đang giao hàng"] };
 			} else {
 				queryCondition.status = status;
 			}
