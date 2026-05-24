@@ -6,6 +6,7 @@ const {
   getTracking,
   buildGhtkPayload,
   isGhtkDelivered,
+  GHTK_STATUS_LABELS,
 } = require("../services/ghtk.service");
 
 const CONFIRMABLE_STATUSES = ["Chờ xác nhận", "Chờ giao hàng", "Đã thanh toán"];
@@ -172,10 +173,12 @@ const getOrderTracking = async (req, res) => {
 
     const ghtkRes = await getTracking(trackingCode);
     const ghtkOrder = ghtkRes.order || {};
-    const syncedStatus = String(
-      ghtkOrder.status_text ?? ghtkOrder.status ?? ""
-    );
     const ghtkStatusId = String(ghtkOrder.status ?? "");
+    // Biện pháp giảm rủi ro: GHTK bug — status_text không cập nhật theo status.
+    // Ưu tiên: (1) dịch status_id số → tiếng Việt theo bảng chuẩn,
+    // (2) fallback về status_text nếu không có trong bảng,
+    // (3) cuối cùng mới dùng raw status_id.
+    const syncedStatus = GHTK_STATUS_LABELS[ghtkStatusId] || ghtkOrder.status_text || ghtkStatusId;
 
     const orderPatch = {
       "ghtk.status": syncedStatus || ghtkStatusId,
@@ -192,6 +195,29 @@ const getOrderTracking = async (req, res) => {
         `${order.status} -> Đã giao hàng | GHTK: ${orderPatch["ghtk.status"]}`,
         ""
       );
+    } else if (ghtkStatusId === "-1" && order.status !== "Đã hủy") {
+      orderPatch.status = "Đã hủy";
+      await pushAdminLog(
+        id,
+        req,
+        "Đồng bộ GHTK — đã hủy",
+        `${order.status} -> Đã hủy | GHTK: ${orderPatch["ghtk.status"]}`,
+        "Đồng bộ trạng thái hủy từ GHTK"
+      );
+      if (order.status !== "Chờ thanh toán") {
+        for (const product of order.productsOrder || []) {
+          await optionModel.option.findByIdAndUpdate(
+            product.option_id,
+            { $inc: { quantity: product.quantity, soldQuantity: -product.quantity } }
+          );
+        }
+        if (order.voucher_ids && order.voucher_ids.length > 0) {
+          const VoucherModel = require("../models/Voucher").voucher;
+          for (const v_id of order.voucher_ids) {
+            await VoucherModel.findByIdAndUpdate(v_id, { $inc: { quantity: 1 } });
+          }
+        }
+      }
     }
 
     await orderModel.order.findByIdAndUpdate(id, orderPatch);

@@ -4,6 +4,7 @@ const productModel = require("../models/Products");
 const { sendNotification } = require('../config/Fcm');
 const infoModel = require("../models/Info");
 const accountModel = require("../models/Account");
+const { cancelOrderGHTK } = require("../services/ghtk.service");
 const {
 	assertCodAllowedForUser,
 	syncTrustAfterOrderStatusChange,
@@ -559,7 +560,8 @@ const getOrdersByUserId = async (req, res, next) => {
 			if (status === "Chờ xác nhận") {
 				queryCondition.status = { $in: ["Chờ xác nhận", "Đã thanh toán"] };
 			} else if (status === "Chờ/Đang giao hàng") {
-				queryCondition.status = { $in: ["Chờ giao hàng", "Đang giao hàng"] };
+				// Bao gồm "shipping" (trạng thái sau khi admin xác nhận GHTK) để đơn không biến mất
+				queryCondition.status = { $in: ["Chờ giao hàng", "shipping", "Đang giao hàng"] };
 			} else {
 				queryCondition.status = status;
 			}
@@ -638,13 +640,57 @@ const updateOrderStatus = async (req, res, next) => {
 		if (
 			status === "Đã hủy" &&
 			(order.status === "Đã giao hàng" ||
-				((order.status === "Chờ giao hàng" ||
-					order.status === "Đang giao hàng" ||
-					order.status === "shipping") &&
-					!isStaff))
+				(order.status === "Đang giao hàng" && !isStaff))
 		) {
 			return res.status(409).json({ code: 409, message: "Don't change status order" });
 		}
+		if (status === "Đã hủy") {
+			const trackingCode = order.ghtk?.trackingCode || order.ghtk?.label;
+			if (trackingCode) {
+				try {
+					const ghtkRes = await cancelOrderGHTK(trackingCode);
+					if (!ghtkRes.success) {
+						const msg = ghtkRes.message || "";
+						const isAlreadyCancelled = /đã ở trạng thái hủy|đã được hủy|đã hủy/.test(msg.toLowerCase());
+						const isNotFound = /không tồn tại|không tìm thấy/.test(msg.toLowerCase());
+						
+						if (!isAlreadyCancelled && !isNotFound) {
+							return res.status(409).json({
+								code: 409,
+								message: `Không thể hủy đơn hàng trên GHTK: ${msg}`,
+								ghtk: ghtkRes
+							});
+						}
+					}
+				} catch (error) {
+					console.error("Lỗi khi hủy đơn trên GHTK (updateOrderStatus):", error);
+					if (error.response && error.response.status === 400 && error.response.data) {
+						const ghtkRes = error.response.data;
+						const msg = ghtkRes.message || "";
+						const isAlreadyCancelled = /đã ở trạng thái hủy|đã được hủy|đã hủy/.test(msg.toLowerCase());
+						const isNotFound = /không tồn tại|không tìm thấy/.test(msg.toLowerCase());
+						
+						if (isAlreadyCancelled || isNotFound) {
+							console.log(`[GHTK] GHTK báo lỗi 400 (${msg}) nhưng là ngoại lệ an toàn. Tiếp tục hủy cục bộ.`);
+						} else {
+							return res.status(409).json({
+								code: 409,
+								message: `Không thể hủy đơn hàng trên GHTK: ${msg}`,
+								ghtk: ghtkRes
+							});
+						}
+					} else if (error.response && error.response.status === 404) {
+						console.log("[GHTK] API trả về 404 Not Found, tiếp tục hủy đơn cục bộ.");
+					} else {
+						return res.status(502).json({
+							code: 502,
+							message: `Lỗi kết nối với đối tác vận chuyển GHTK: ${error.message}`
+						});
+					}
+				}
+			}
+		}
+
 		const updateData = { status };
 		if (status === "Đã thanh toán") {
 			updateData.payment_status = true;
@@ -790,6 +836,53 @@ const updateOrder = async (req, res, next) => {
 				message:
 					"Không thể đổi trạng thái giao hàng thủ công. Dùng API GHTK (xác nhận / tracking).",
 			});
+		}
+
+		if (status === "Đã hủy") {
+			const trackingCode = order.ghtk?.trackingCode || order.ghtk?.label;
+			if (trackingCode) {
+				try {
+					const ghtkRes = await cancelOrderGHTK(trackingCode);
+					if (!ghtkRes.success) {
+						const msg = ghtkRes.message || "";
+						const isAlreadyCancelled = /đã ở trạng thái hủy|đã được hủy|đã hủy/.test(msg.toLowerCase());
+						const isNotFound = /không tồn tại|không tìm thấy/.test(msg.toLowerCase());
+						
+						if (!isAlreadyCancelled && !isNotFound) {
+							return res.status(409).json({
+								code: 409,
+								message: `Không thể hủy đơn hàng trên GHTK: ${msg}`,
+								ghtk: ghtkRes
+							});
+						}
+					}
+				} catch (error) {
+					console.error("Lỗi khi hủy đơn trên GHTK (updateOrder):", error);
+					if (error.response && error.response.status === 400 && error.response.data) {
+						const ghtkRes = error.response.data;
+						const msg = ghtkRes.message || "";
+						const isAlreadyCancelled = /đã ở trạng thái hủy|đã được hủy|đã hủy/.test(msg.toLowerCase());
+						const isNotFound = /không tồn tại|không tìm thấy/.test(msg.toLowerCase());
+						
+						if (isAlreadyCancelled || isNotFound) {
+							console.log(`[GHTK] GHTK báo lỗi 400 (${msg}) nhưng là ngoại lệ an toàn. Tiếp tục hủy cục bộ.`);
+						} else {
+							return res.status(409).json({
+								code: 409,
+								message: `Không thể hủy đơn hàng trên GHTK: ${msg}`,
+								ghtk: ghtkRes
+							});
+						}
+					} else if (error.response && error.response.status === 404) {
+						console.log("[GHTK] API trả về 404 Not Found, tiếp tục hủy đơn cục bộ.");
+					} else {
+						return res.status(502).json({
+							code: 502,
+							message: `Lỗi kết nối với đối tác vận chuyển GHTK: ${error.message}`
+						});
+					}
+				}
+			}
 		}
 
 		if (info_id && typeof info_id === "object" && order.info_id) {
@@ -1042,8 +1135,54 @@ const cancelOrder = async (req, res, next) => {
 			return res.status(404).json({ code: 404, message: "order not found" });
 		}
 
-		if (order.status != "Chờ xác nhận") {
+		const allowedStatuses = new Set(["Chờ xác nhận", "shipping", "Chờ giao hàng"]);
+		if (!allowedStatuses.has(order.status)) {
 			return res.status(409).json({ code: 409, message: "Don't cancel order" });
+		}
+
+		const trackingCode = order.ghtk?.trackingCode || order.ghtk?.label;
+		if (trackingCode) {
+			try {
+				const ghtkRes = await cancelOrderGHTK(trackingCode);
+				if (!ghtkRes.success) {
+					const msg = ghtkRes.message || "";
+					const isAlreadyCancelled = /đã ở trạng thái hủy|đã được hủy|đã hủy/.test(msg.toLowerCase());
+					const isNotFound = /không tồn tại|không tìm thấy/.test(msg.toLowerCase());
+					
+					if (!isAlreadyCancelled && !isNotFound) {
+						return res.status(409).json({
+							code: 409,
+							message: `Không thể hủy đơn hàng trên GHTK: ${msg}`,
+							ghtk: ghtkRes
+						});
+					}
+				}
+			} catch (error) {
+				console.error("Lỗi khi hủy đơn trên GHTK (cancelOrder):", error);
+				if (error.response && error.response.status === 400 && error.response.data) {
+					const ghtkRes = error.response.data;
+					const msg = ghtkRes.message || "";
+					const isAlreadyCancelled = /đã ở trạng thái hủy|đã được hủy|đã hủy/.test(msg.toLowerCase());
+					const isNotFound = /không tồn tại|không tìm thấy/.test(msg.toLowerCase());
+					
+					if (isAlreadyCancelled || isNotFound) {
+						console.log(`[GHTK] GHTK báo lỗi 400 (${msg}) nhưng là ngoại lệ an toàn. Tiếp tục hủy cục bộ.`);
+					} else {
+						return res.status(409).json({
+							code: 409,
+							message: `Không thể hủy đơn hàng trên GHTK: ${msg}`,
+							ghtk: ghtkRes
+						});
+					}
+				} else if (error.response && error.response.status === 404) {
+					console.log("[GHTK] API trả về 404 Not Found, tiếp tục hủy đơn cục bộ.");
+				} else {
+					return res.status(502).json({
+						code: 502,
+						message: `Lỗi kết nối với đối tác vận chuyển GHTK: ${error.message}`
+					});
+				}
+			}
 		}
 
 		await orderModel.order.findByIdAndUpdate(orderId, { status: "Đã hủy" }, { new: true });

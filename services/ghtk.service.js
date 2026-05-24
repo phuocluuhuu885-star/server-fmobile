@@ -191,11 +191,43 @@ function isGhtkDelivered(ghtkOrder = {}) {
   return /đã giao|da giao|delivered|hoàn tất|hoan tat/.test(text);
 }
 
+/**
+ * Hủy vận đơn GHTK.
+ * @param {string} trackingOrder - Mã label GHTK hoặc mã đơn hàng đối tác
+ */
+async function cancelOrderGHTK(trackingOrder) {
+  if (!trackingOrder) {
+    return { success: false, message: "Mã vận đơn trống" };
+  }
+
+  const trimmedTracking = trackingOrder.trim();
+
+  // Kiểm tra nếu là mã mock/test cục bộ thì bỏ qua gọi API thực tế
+  if (trimmedTracking.startsWith("GHTK_MOCK_")) {
+    console.log(`[GHTK MOCK] Bỏ qua API thực tế, hủy đơn hàng giả lập: ${trimmedTracking}`);
+    return { success: true, message: "Hủy đơn hàng thành công (Mock)" };
+  }
+
+  const encoded = encodeURIComponent(trimmedTracking);
+  const headers = getGhtkHeaders();
+
+  console.log(`[GHTK] Gửi yêu cầu hủy vận đơn: ${trimmedTracking} tới ${GHTK_BASE_URL}`);
+
+  const { data } = await axios.post(
+    `${GHTK_BASE_URL}/services/shipment/cancel/${encoded}`,
+    {},
+    { headers, timeout: 30000 }
+  );
+
+  return data;
+}
+
 module.exports = {
   createOrderGHTK,
   getTracking,
   buildGhtkPayload,
   formatGhtkStatus,
   isGhtkDelivered,
+  cancelOrderGHTK,
   GHTK_STATUS_LABELS,
 };
