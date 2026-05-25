@@ -9,8 +9,7 @@ function effectiveTrust(score) {
 
 function isUserPaymentRestricted(accountDoc) {
 	if (!accountDoc) return false;
-	if (accountDoc.is_blacklisted === true) return true;
-	return effectiveTrust(accountDoc.trust_score) < BLACKLIST_THRESHOLD;
+	return accountDoc.is_blacklisted === true;
 }
 
 async function adjustUserTrustScore(userId, delta) {
