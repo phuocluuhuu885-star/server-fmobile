@@ -26,6 +26,7 @@ var notifiRoute = require("./routers/notification.route");
 var statisticalRoute = require('./routers/statistical.route'); 
 var voucherRoute = require("./routers/voucher.router");
 var yeuthichRoute = require("./routers/yeuthich.route");
+var withdrawalRoute = require("./routers/withdrawal.route");
 var app = express();
 
 
@@ -60,6 +61,7 @@ app.use('/api/notifi',notifiRoute);
 app.use('/api/statistical', statisticalRoute);
 app.use('/api/yeuthich', yeuthichRoute);
 app.use('/api/voucher', voucherRoute);
+app.use('/api/withdrawal', withdrawalRoute);
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {
   next(createError(404));
