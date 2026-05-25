@@ -22,6 +22,7 @@ const accountSchema = new db.mongoose.Schema(
     trust_score: { type: Number, default: 150, min: 0 },
     is_blacklisted: { type: Boolean, default: false },
     restrict_buy: { type: Boolean, default: false },
+    wallet_balance: { type: Number, default: 0, min: 0 },
     admin_logs: [
       {
         updated_by: { type: String },         // Tên admin thực hiện

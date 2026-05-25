@@ -62,6 +62,11 @@ router.delete(
   middleware.checkToken,
   controller.changeActiveStaff
 );
-// router.delete("/delete-account/:uid", middleware.checkToken, controller.deleteAccount)
+router.get("/wallet", middleware.checkToken, controller.getWalletInfo);
+router.get(
+  "/wallet/:uid",
+  middleware.checkToken,
+  controller.getWalletInfoByAdmin
+);
 
 module.exports = router;

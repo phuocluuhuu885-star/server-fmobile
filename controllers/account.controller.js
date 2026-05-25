@@ -154,6 +154,7 @@ const allUser = async (req, res, next) => {
         avatar: user.avatar,
         role: user.role_id,
         is_active: user.is_active,
+        wallet_balance: user.wallet_balance || 0,
       };
     });
     return res.status(200).json({
@@ -444,6 +445,44 @@ const changeRestrictCod = async (req, res, next) => {
   }
 };
 
+const getWalletInfo = async (req, res, next) => {
+  try {
+    const walletService = require("../services/wallet.service");
+    const userId = req.user._id;
+    const walletData = await walletService.getWalletInfo(userId);
+    return res.status(200).json({
+      code: 200,
+      data: walletData,
+      message: "Get wallet info successfully"
+    });
+  } catch (error) {
+    return res.status(500).json({ code: 500, message: error.message });
+  }
+};
+
+const getWalletInfoByAdmin = async (req, res, next) => {
+  try {
+    const user = req.user;
+    if (user.role_id === "customer") {
+      return res.status(403).json({
+        code: 403,
+        message: "You do not have permission to use this function",
+      });
+    }
+
+    const { uid } = req.params;
+    const walletService = require("../services/wallet.service");
+    const walletData = await walletService.getWalletInfo(uid);
+    return res.status(200).json({
+      code: 200,
+      data: walletData,
+      message: "Get user wallet info successfully"
+    });
+  } catch (error) {
+    return res.status(500).json({ code: 500, message: error.message });
+  }
+};
+
 module.exports = {
   detailProfile,
   resetPassword,
@@ -455,4 +494,7 @@ module.exports = {
   changeActiveStaff,
   changeRestrictBuy,
   changeRestrictCod,
+  getWalletInfo,
+  getWalletInfoByAdmin,
 };
+

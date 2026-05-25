@@ -74,7 +74,7 @@ const createOrderDefault = async (req, res, next) => {
 		const user_id = req.user._id;
 		const { productsOrder, info_id, payment_method, voucher_ids } = req.body;
 
-		if (payment_method !== 2) {
+		if (payment_method !== 2 && payment_method !== 4) {
 			try {
 				await assertCodAllowedForUser(user_id);
 			} catch (e) {
@@ -220,11 +220,12 @@ const scheduleQROrderCleanup = (orderId) => {
 
 const createOrder = async (req, res, next) => {
 	try {
+		const mongoose = require("mongoose");
 		const user_id = req.user._id;
 		const { productsOrder, info_id, voucher_ids, payment_method } = req.body;
 		console.log("test" + productsOrder);
 
-		if (payment_method !== 3) {
+		if (payment_method !== 3 && payment_method !== 4) {
 			try {
 				await assertCodAllowedForUser(user_id);
 			} catch (e) {
@@ -238,21 +239,53 @@ const createOrder = async (req, res, next) => {
 		const total_price = await calculateTotalPrice(productsOrder);
 
 		const isQR = payment_method === 3;
+		const isWallet = payment_method === 4;
 		const initialStatus = isQR ? "Chờ thanh toán" : "Chờ xác nhận";
+		const orderId = new mongoose.Types.ObjectId();
+
+		if (isWallet) {
+			const walletService = require("../services/wallet.service");
+			try {
+				await walletService.payWithWallet(user_id, total_price, orderId);
+			} catch (error) {
+				return res.status(400).json({ code: 400, message: error.message });
+			}
+		}
 
 		const newOrder = new orderModel.order({
+			_id: orderId,
 			user_id,
 			productsOrder,
 			total_price,
 			info_id,
 			payment_method: payment_method || 1,
 			status: initialStatus,
-			payment_status: false,
+			payment_status: isWallet ? true : false,
 			voucher_ids: voucher_ids || [],
 		});
 
 		// Save the order to the database
-		const savedOrder = await newOrder.save();
+		let savedOrder;
+		try {
+			savedOrder = await newOrder.save();
+		} catch (saveError) {
+			if (isWallet) {
+				// Rollback wallet payment
+				const accountModel = require("../models/Account");
+				const walletTransactionModel = require("../models/WalletTransaction");
+				await accountModel.account.findByIdAndUpdate(user_id, { $inc: { wallet_balance: total_price } });
+				const tx = new walletTransactionModel.walletTransaction({
+					user_id,
+					type: "refund",
+					amount: total_price,
+					description: `Hoàn tiền lỗi tạo đơn hàng ${orderId}`,
+					order_id: orderId
+				});
+				await tx.save();
+			}
+			throw saveError;
+		}
+
 		// Loop through productsOrder array in the order
 		for (const product of productsOrder) {
 			const { option_id, quantity } = product;
@@ -284,7 +317,7 @@ const createOrder = async (req, res, next) => {
 		return res.status(201).json({
 			code: 201,
 			result: savedOrder,
-			message: isQR ? "Đang chờ thanh toán QR" : "created order successfully",
+			message: isQR ? "Đang chờ thanh toán QR" : (isWallet ? "Thanh toán bằng ví F thành công" : "created order successfully"),
 		});
 	} catch (error) {
 		console.log(error);
@@ -374,6 +407,29 @@ const sepayWebhook = async (req, res, next) => {
 		}
 
 		const sepayTransId = `sepay_${id}`;
+
+		// 1. Kiểm tra xem đây có phải là giao dịch nạp tiền ví F không (nội dung chứa NAPW)
+		if (content && content.includes("NAPW")) {
+			const userIdMatch = content.match(/NAPW([0-9a-fA-F]{24})/);
+			if (userIdMatch) {
+				const userId = userIdMatch[1];
+				const walletService = require("../services/wallet.service");
+				try {
+					const result = await walletService.topUpWallet(userId, Number(transferAmount), sepayTransId);
+					return res.status(200).json({
+						success: true,
+						message: "Topup processed successfully",
+						data: result
+					});
+				} catch (error) {
+					console.error("[Ví F Webhook Error]:", error);
+					return res.status(500).json({ success: false, message: error.message });
+				}
+			} else {
+				return res.status(400).json({ success: false, message: "Invalid NAPW format" });
+			}
+		}
+
 		const existingOrder = await orderModel.order.findOne({ app_trans_id: sepayTransId });
 		if (existingOrder) {
 			return res.status(200).json({ success: true, message: "Transaction already processed" });
@@ -747,6 +803,17 @@ const updateOrderStatus = async (req, res, next) => {
 				}
 			}
 
+			if (status === "Đã hủy" && order.status !== "Đã hủy") {
+				if (order.payment_status === true) {
+					const walletService = require("../services/wallet.service");
+					try {
+						await walletService.refundOrderToWallet(order);
+					} catch (refundError) {
+						console.error("[Ví F Refund Error in updateOrderStatus]:", refundError);
+					}
+				}
+			}
+
 			try {
 				await syncTrustAfterOrderStatusChange(
 					updatedOrder.user_id,
@@ -838,7 +905,7 @@ const updateOrder = async (req, res, next) => {
 			});
 		}
 
-		if (status === "Đã hủy") {
+		if (status === "Đã hủy" && order.status !== "Đã hủy") {
 			const trackingCode = order.ghtk?.trackingCode || order.ghtk?.label;
 			if (trackingCode) {
 				try {
@@ -881,6 +948,32 @@ const updateOrder = async (req, res, next) => {
 							message: `Lỗi kết nối với đối tác vận chuyển GHTK: ${error.message}`
 						});
 					}
+				}
+			}
+
+			// Restore quantities if it was previously deducted (i.e. status is not Chờ thanh toán)
+			if (order.status !== "Chờ thanh toán") {
+				for (const product of order.productsOrder) {
+					await optionModel.option.findByIdAndUpdate(
+						product.option_id,
+						{ $inc: { quantity: product.quantity, soldQuantity: -product.quantity } }
+					);
+				}
+				if (order.voucher_ids && order.voucher_ids.length > 0) {
+					const VoucherModel = require("../models/Voucher").voucher;
+					for (const v_id of order.voucher_ids) {
+						await VoucherModel.findByIdAndUpdate(v_id, { $inc: { quantity: 1 } });
+					}
+				}
+			}
+
+			// Refund wallet balance if paid
+			if (order.payment_status === true) {
+				const walletService = require("../services/wallet.service");
+				try {
+					await walletService.refundOrderToWallet(order);
+				} catch (refundError) {
+					console.error("[Ví F Refund Error in updateOrder]:", refundError);
 				}
 			}
 		}
@@ -1186,6 +1279,15 @@ const cancelOrder = async (req, res, next) => {
 		}
 
 		await orderModel.order.findByIdAndUpdate(orderId, { status: "Đã hủy" }, { new: true });
+
+		if (order.payment_status === true) {
+			const walletService = require("../services/wallet.service");
+			try {
+				await walletService.refundOrderToWallet(order);
+			} catch (refundError) {
+				console.error("[Ví F Refund Error in cancelOrder]:", refundError);
+			}
+		}
 
 		try {
 			await syncTrustAfterOrderStatusChange(order.user_id, order.status, "Đã hủy", "Khách hàng tự hủy");

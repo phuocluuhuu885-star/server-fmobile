@@ -218,6 +218,14 @@ const getOrderTracking = async (req, res) => {
           }
         }
       }
+      if (order.payment_status === true) {
+        const walletService = require("../services/wallet.service");
+        try {
+          await walletService.refundOrderToWallet(order);
+        } catch (refundError) {
+          console.error("[Ví F Refund Error in getOrderTracking sync]:", refundError);
+        }
+      }
     }
 
     await orderModel.order.findByIdAndUpdate(id, orderPatch);
