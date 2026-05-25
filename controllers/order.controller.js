@@ -1353,6 +1353,222 @@ const getAllOrder = async (req, res, next) => {
 };
 
 
+const sendWebhookStatusNotification = async (orderId, status) => {
+	try {
+		const order = await orderModel.order.findById(orderId);
+		if (!order) return;
+
+		const user = await accountModel.account.findById(order.user_id).lean();
+		if (user) {
+			const productNames = await Promise.all(order.productsOrder.map(async (po) => {
+				const opt = await optionModel.option.findById(po.option_id).populate('product_id');
+				return opt?.product_id?.name?.trim();
+			}));
+			const filtered = productNames.filter(Boolean);
+			const productPreview = filtered.length > 2 ? filtered.slice(0, 2).join(', ') + ', ...' : filtered.join(', ');
+			const title = "🛒 Cập nhật trạng thái đơn hàng";
+			const body = productPreview
+				? `Đơn hàng (${productPreview}) của bạn đã được cập nhật trạng thái: ${status}`
+				: `Đơn hàng của bạn đã được cập nhật trạng thái: ${status}`;
+
+			const notifiModel = require("../models/Notification");
+			const newNoti = new notifiModel.notifi({
+				sender_id: order.user_id, // System/User
+				receiver_id: order.user_id,
+				content: body,
+				order_id: String(orderId),
+				status: "unread",
+				type: "wfc"
+			});
+			await newNoti.save();
+
+			if (user.fcmToken) {
+				await sendNotification(user.fcmToken, title, body, { order_id: String(orderId), status: String(status) });
+			}
+		}
+	} catch (e) {
+		console.error('Lỗi gửi thông báo trạng thái đơn hàng (GHTK Webhook notification helper):', e);
+	}
+};
+
+const ghtkWebhook = async (req, res, next) => {
+	try {
+		console.log("=== GHTK WEBHOOK RECEIVED (SIMPLIFIED) ===");
+		console.log("Body:", JSON.stringify(req.body, null, 2));
+
+		const { partner_id, label_id, status_id, reason, fee } = req.body;
+		if (!partner_id && !label_id) {
+			console.log("❌ Webhook GHTK error: Missing partner_id and label_id");
+			return res.status(400).json({ success: false, message: "Missing identifier fields" });
+		}
+
+		const statusIdStr = status_id != null ? String(status_id).trim() : "";
+		const mongoose = require("mongoose");
+
+		// Find the order
+		let order = null;
+		if (partner_id && mongoose.Types.ObjectId.isValid(partner_id)) {
+			order = await orderModel.order.findById(partner_id);
+		}
+		if (!order && label_id) {
+			order = await orderModel.order.findOne({
+				$or: [{ "ghtk.trackingCode": label_id }, { "ghtk.label": label_id }]
+			});
+		}
+
+		if (!order) {
+			console.log(`⚠️ Order not found: partner_id=${partner_id}, label_id=${label_id}`);
+			return res.status(200).send("HTTP/1.1 200 OK");
+		}
+
+		const previousStatus = order.status;
+
+		// Idempotency check: if order is already completed or cancelled, ignore
+		if (previousStatus === "Đã giao hàng" || previousStatus === "Đã hủy") {
+			console.log(`[GHTK Webhook] Order ${order._id} is already in completed state: ${previousStatus}. Ignoring.`);
+			return res.status(200).send("HTTP/1.1 200 OK");
+		}
+
+		const { GHTK_STATUS_LABELS } = require("../services/ghtk.service");
+		const syncedStatus = GHTK_STATUS_LABELS[statusIdStr] || statusIdStr;
+		const orderPatch = {
+			"ghtk.status": syncedStatus,
+			"ghtk.fee": Number(fee || order.ghtk?.fee || 0)
+		};
+
+		if (label_id) {
+			orderPatch["ghtk.label"] = label_id;
+			orderPatch["ghtk.trackingCode"] = label_id;
+		}
+
+		// 1. Giao hàng thành công (status_id: 5, 6, 45)
+		const DELIVERED_STATUS_IDS = new Set(["5", "6", "45"]);
+		if (DELIVERED_STATUS_IDS.has(statusIdStr)) {
+			orderPatch.status = "Đã giao hàng";
+			orderPatch.completedAt = new Date();
+			orderPatch.payment_status = true; // COD received or ZaloPay cleared
+
+			// Update the database
+			await orderModel.order.findByIdAndUpdate(order._id, orderPatch);
+
+			// Add system log
+			await addOrderLog(
+				order._id,
+				"System (GHTK Webhook)",
+				"Đồng bộ GHTK — đã giao",
+				`${previousStatus} -> Đã giao hàng | GHTK: ${syncedStatus}`,
+				""
+			);
+
+			// Update Trust Score
+			try {
+				const { syncTrustAfterOrderStatusChange } = require("../utils/userTrust");
+				await syncTrustAfterOrderStatusChange(order.user_id, previousStatus, "Đã giao hàng", "Đồng bộ giao hàng tự động GHTK Webhook");
+			} catch (trustError) {
+				console.error("❌ [GHTK Webhook] Error syncing trust score on delivery:", trustError);
+			}
+
+			// Send Push Notification
+			try {
+				await sendWebhookStatusNotification(order._id, "Đã giao hàng");
+			} catch (notiError) {
+				console.error("❌ [GHTK Webhook] Error sending notification on delivery:", notiError);
+			}
+		}
+		// 2. Hủy đơn / Trả hàng (status_id: -1, 21)
+		else if (statusIdStr === "-1" || statusIdStr === "21") {
+			orderPatch.status = "Đã hủy";
+			orderPatch.reason = reason || (statusIdStr === "21" ? "Khách trả hàng (GHTK báo đã trả)" : "Hủy đơn từ đối tác vận chuyển GHTK");
+
+			// Update the database
+			await orderModel.order.findByIdAndUpdate(order._id, orderPatch);
+
+			// Add system log
+			await addOrderLog(
+				order._id,
+				"System (GHTK Webhook)",
+				"Đồng bộ GHTK — đã hủy/trả hàng",
+				`${previousStatus} -> Đã hủy | GHTK: ${syncedStatus}`,
+				orderPatch.reason
+			);
+
+			// Restore stock
+			for (const product of order.productsOrder || []) {
+				await optionModel.option.findByIdAndUpdate(
+					product.option_id,
+					{ $inc: { quantity: product.quantity, soldQuantity: -product.quantity } }
+				);
+			}
+
+			// Restore vouchers
+			if (order.voucher_ids && order.voucher_ids.length > 0) {
+				const VoucherModel = require("../models/Voucher").voucher;
+				for (const v_id of order.voucher_ids) {
+					await VoucherModel.findByIdAndUpdate(v_id, { $inc: { quantity: 1 } });
+				}
+			}
+
+			// Refund wallet balance if paid
+			if (order.payment_status === true) {
+				const walletService = require("../services/wallet.service");
+				try {
+					await walletService.refundOrderToWallet(order);
+				} catch (refundError) {
+					console.error("❌ [GHTK Webhook] Wallet refund error:", refundError);
+				}
+			}
+
+			// Update Trust Score
+			try {
+				const { syncTrustAfterOrderStatusChange } = require("../utils/userTrust");
+				await syncTrustAfterOrderStatusChange(order.user_id, previousStatus, "Đã hủy", orderPatch.reason);
+			} catch (trustError) {
+				console.error("❌ [GHTK Webhook] Error syncing trust score on cancellation:", trustError);
+			}
+
+			// Send Push Notification
+			try {
+				await sendWebhookStatusNotification(order._id, "Đã hủy");
+			} catch (notiError) {
+				console.error("❌ [GHTK Webhook] Error sending notification on cancellation:", notiError);
+			}
+		}
+		// 3. Trạng thái trung gian khác (ví dụ: 4 -> Đang giao hàng, 3 -> shipping)
+		else {
+			if (statusIdStr === "4") {
+				orderPatch.status = "Đang giao hàng";
+			} else if (statusIdStr === "3") {
+				orderPatch.status = "shipping";
+			}
+
+			await orderModel.order.findByIdAndUpdate(order._id, orderPatch);
+
+			// Add system log
+			await addOrderLog(
+				order._id,
+				"System (GHTK Webhook)",
+				"Cập nhật trạng thái GHTK",
+				`${previousStatus} -> ${orderPatch.status || previousStatus} | GHTK: ${syncedStatus}`,
+				""
+			);
+
+			// Send Push Notification if order status changed
+			if (orderPatch.status && orderPatch.status !== previousStatus) {
+				try {
+					await sendWebhookStatusNotification(order._id, orderPatch.status);
+				} catch (notiError) {
+					console.error("❌ [GHTK Webhook] Error sending intermediate notification:", notiError);
+				}
+			}
+		}
+
+		return res.status(200).send("HTTP/1.1 200 OK");
+	} catch (error) {
+		console.error("❌ [GHTK Webhook Error]:", error);
+		return res.status(500).json({ success: false, error: error.message });
+	}
+};
+
 module.exports = {
 	deleteOrder,
 	createOrder,
@@ -1370,4 +1586,5 @@ module.exports = {
 	cancelOrderQR,
 	confirmOrderQR,
 	sepayWebhook,
+	ghtkWebhook,
 };

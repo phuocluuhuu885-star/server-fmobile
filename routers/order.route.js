@@ -8,6 +8,7 @@ router.post("/create-order-by-zalo", middleware.checkToken, controller.createOrd
 router.delete("/qr/cancel/:orderId", middleware.checkToken, controller.cancelOrderQR);
 router.put("/qr/confirm/:orderId", middleware.checkToken, controller.confirmOrderQR);
 router.post("/sepay-webhook", controller.sepayWebhook);
+router.post("/ghtk-webhook", controller.ghtkWebhook);
 
 router.put(
   "/update-order/:orderId",
