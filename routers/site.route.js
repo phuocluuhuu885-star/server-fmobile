@@ -16,6 +16,9 @@ router.put(
   controller.createNewPassword
 );
 
+// Cập nhật FCM token khi token Firebase bị refresh
+router.put("/update-fcm-token", middlware.checkToken, controller.updateFcmToken);
+
 
 
 module.exports = router;

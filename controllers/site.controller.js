@@ -342,6 +342,26 @@ const createNewPassword = async (req, res, next) => {
 	}
 };
 
+const updateFcmToken = async (req, res, next) => {
+	try {
+		const { fcmToken } = req.body;
+		if (!fcmToken) {
+			return res.status(400).json({ code: 400, message: "fcmToken is required" });
+		}
+		const user = await model.account.findById(req.user._id);
+		if (!user) {
+			return res.status(404).json({ code: 404, message: "User not found" });
+		}
+		user.fcmToken = fcmToken;
+		await user.save();
+		console.log(`[FCM] Đã cập nhật fcmToken cho user ${req.user._id}`);
+		return res.status(200).json({ code: 200, message: "FCM token updated" });
+	} catch (error) {
+		console.error("error - updateFcmToken: ", error.message);
+		return res.status(500).json({ code: 500, message: error.message });
+	}
+};
+
 const forgotPassword = async (req, res, next) => {
 	try {
 		const email = req.body.email;
@@ -382,4 +402,5 @@ module.exports = {
 	forgotPassword,
 	loginWithGoogle,
 	createNewPassword,
+	updateFcmToken,
 };
