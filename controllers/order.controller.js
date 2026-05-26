@@ -220,6 +220,14 @@ const scheduleQROrderCleanup = (orderId) => {
 
 const createOrder = async (req, res, next) => {
 	try {
+		// ---- Kiểm tra hạn chế mua hàng ----
+		if (req.user && req.user.restrict_buy === true) {
+			return res.status(403).json({
+				code: 403,
+				message: "Tài khoản của bạn bị hạn chế mua hàng. Vui lòng liên hệ Admin để được hỗ trợ.",
+			});
+		}
+
 		const mongoose = require("mongoose");
 		const user_id = req.user._id;
 		const { productsOrder, info_id, voucher_ids, payment_method } = req.body;
