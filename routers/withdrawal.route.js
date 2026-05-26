@@ -32,4 +32,8 @@ router.put(
 );
 router.put("/admin/reject/:id", middleware.checkToken, controller.rejectRequest);
 
+// SePay Webhook – tự động duyệt đơn rút tiền khi ngân hàng xác nhận chuyển khoản
+// Không cần checkToken – SePay xác thực qua Authorization header (Apikey)
+router.post("/sepay-webhook-refund", controller.sepayWithdrawalWebhook);
+
 module.exports = router;

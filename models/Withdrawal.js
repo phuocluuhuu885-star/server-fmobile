@@ -12,7 +12,11 @@ const withdrawalSchema = new db.mongoose.Schema(
     bill_image: { type: String }, // Link ảnh hóa đơn chuyển khoản (khi approved)
     rejection_reason: { type: String }, // Lý do từ chối (khi rejected)
     processed_by: { type: db.mongoose.Schema.Types.ObjectId, ref: "account" }, // Admin xử lý
-    processed_at: { type: Date }
+    processed_at: { type: Date },
+    transaction_id: { type: String }, // Mã giao dịch ngân hàng (từ SePay referenceCode)
+    sepay_trans_id: { type: String, unique: true, sparse: true }, // ID giao dịch SePay để chống duplicate
+    balance_before: { type: Number }, // Số dư trước khi rút
+    balance_after: { type: Number } // Số dư sau khi rút
   },
   {
     timestamps: true,
