@@ -594,6 +594,7 @@ const processProducts = async (products) => {
         review: product.product_review.length,
         active: product.is_active,
         soldQuantity: totalSoldQuantity,
+        option,
       };
     })
   );
