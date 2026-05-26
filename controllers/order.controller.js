@@ -416,6 +416,34 @@ const sepayWebhook = async (req, res, next) => {
 				const walletService = require("../services/wallet.service");
 				try {
 					const result = await walletService.topUpWallet(userId, Number(transferAmount), sepayTransId);
+
+					// Gửi thông báo đến user sau khi nạp ví thành công
+					try {
+						const requester = await accountModel.account.findById(userId);
+						if (requester) {
+							const title = "💰 Nạp tiền ví F-Wallet thành công";
+							const body = `Bạn đã nạp thành công +${Number(transferAmount).toLocaleString("vi-VN")}đ vào ví F-Wallet. Số dư mới: ${result.balance.toLocaleString("vi-VN")}đ.`;
+
+							const notifiModel = require("../models/Notification");
+							const newNoti = new notifiModel.notifi({
+								receiver_id: userId,
+								content: body,
+								status: "unread",
+								type: "wallet"
+							});
+							await newNoti.save();
+
+							if (requester.fcmToken) {
+								await sendNotification(requester.fcmToken, title, body, {
+									type: "wallet",
+									balance: String(result.balance)
+								});
+							}
+						}
+					} catch (notiErr) {
+						console.error("Lỗi khi gửi thông báo nạp tiền ví F:", notiErr);
+					}
+
 					return res.status(200).json({
 						success: true,
 						message: "Topup processed successfully",
