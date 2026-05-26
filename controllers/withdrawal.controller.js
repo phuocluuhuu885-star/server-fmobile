@@ -7,10 +7,10 @@ const { sendNotification } = require("../config/Fcm");
 // Tạo đơn rút tiền
 const createRequest = async (req, res, next) => {
   try {
-    const { name, bank, account_number, amount } = req.body;
+    const { name, bank, bank_code, account_number, amount } = req.body;
     const parsedAmount = Number(amount);
 
-    if (!name || !bank || !account_number || !parsedAmount || parsedAmount < 1000) {
+    if (!name || !bank || !bank_code || !account_number || !parsedAmount || parsedAmount < 1000) {
       return res.status(400).json({
         code: 400,
         message: "Thông tin không hợp lệ hoặc số tiền rút quá nhỏ (tối thiểu 1.000đ)"
@@ -38,6 +38,7 @@ const createRequest = async (req, res, next) => {
       user_id: userId,
       name,
       bank,
+      bank_code,
       account_number,
       amount: parsedAmount,
       status: "pending"
