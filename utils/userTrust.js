@@ -28,39 +28,71 @@ async function adjustUserTrustScore(userId, delta) {
 }
 
 /**
- * @param {import("mongoose").Types.ObjectId} userId
+ * @param {object|import("mongoose").Types.ObjectId|string} orderOrUserId
  * @param {string} previousStatus
  * @param {string} newStatus
  * @param {string} reason
+ * @param {boolean} isCancelledByAdmin
  */
-async function syncTrustAfterOrderStatusChange(userId, previousStatus, newStatus, reason = "") {
-	if (!userId || previousStatus === newStatus) return;
+async function syncTrustAfterOrderStatusChange(orderOrUserId, previousStatus, newStatus, reason = "", isCancelledByAdmin = false) {
+	if (!orderOrUserId || previousStatus === newStatus) return;
 
-	if (newStatus === "Đã giao hàng" && previousStatus !== "Đã giao hàng") {
+	let userId;
+	let orderDoc = null;
+
+	if (orderOrUserId && typeof orderOrUserId === "object" && orderOrUserId.user_id) {
+		userId = orderOrUserId.user_id;
+		orderDoc = orderOrUserId;
+	} else {
+		userId = orderOrUserId;
+	}
+
+	if (!userId) return;
+
+	// Normalize status names to handle accents case-insensitively/partially
+	const normNewStatus = typeof newStatus === 'string' ? newStatus.trim() : "";
+	const normPrevStatus = typeof previousStatus === 'string' ? previousStatus.trim() : "";
+
+	const isDelivered = normNewStatus === "Đã giao hàng" || normNewStatus === "Da giao hàng";
+	const isCancelled = normNewStatus === "Đã hủy" || normNewStatus === "Da hủy";
+
+	if (isDelivered && normPrevStatus !== "Đã giao hàng" && normPrevStatus !== "Da giao hàng") {
 		await adjustUserTrustScore(userId, 10);
 		return;
 	}
 
+	if (isCancelled) {
+		// 1. Luồng mới: Nếu admin hủy đơn sau khi đơn hàng xác nhận và tạo đơn bên ghtk (đã có trackingCode)
+		if (isCancelledByAdmin && orderDoc) {
+			const hasGhtkCode = orderDoc.ghtk && orderDoc.ghtk.trackingCode && orderDoc.ghtk.trackingCode.trim() !== "";
+			if (hasGhtkCode) {
+				await adjustUserTrustScore(userId, -50);
+				return;
+			}
+		}
 
-	const bomFrom = ["Chờ giao hàng", "Đang giao hàng", "shipping"];
-	if (newStatus === "Đã hủy" && bomFrom.includes(previousStatus)) {
-		await adjustUserTrustScore(userId, -50);
-		return;
-	}
+		// Luồng cũ fallback: nếu đơn hàng bị hủy từ trạng thái đang giao/giao hàng
+		const bomFrom = ["Chờ giao hàng", "Đang giao hàng", "shipping"];
+		if (bomFrom.includes(previousStatus)) {
+			await adjustUserTrustScore(userId, -50);
+			return;
+		}
 
-	if (newStatus === "Đã hủy" && previousStatus !== "Đã hủy") {
-		const startOfDay = new Date();
-		startOfDay.setHours(0, 0, 0, 0);
+		// Kiểm tra số lần hủy đơn trong ngày
+		if (normPrevStatus !== "Đã hủy" && normPrevStatus !== "Da hủy") {
+			const startOfDay = new Date();
+			startOfDay.setHours(0, 0, 0, 0);
 
-		const orderModel = require("../models/Orders");
-		const cancelledToday = await orderModel.order.countDocuments({
-			user_id: userId,
-			status: "Đã hủy",
-			updatedAt: { $gte: startOfDay }
-		});
+			const orderModel = require("../models/Orders");
+			const cancelledToday = await orderModel.order.countDocuments({
+				user_id: userId,
+				status: { $in: ["Đã hủy", "Da hủy"] },
+				updatedAt: { $gte: startOfDay }
+			});
 
-		if (cancelledToday > 5) {
-			await adjustUserTrustScore(userId, -10);
+			if (cancelledToday > 5) {
+				await adjustUserTrustScore(userId, -10);
+			}
 		}
 	}
 }

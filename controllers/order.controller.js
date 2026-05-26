@@ -852,10 +852,11 @@ const updateOrderStatus = async (req, res, next) => {
 
 			try {
 				await syncTrustAfterOrderStatusChange(
-					updatedOrder.user_id,
+					order,
 					order.status,
 					status,
-					finalReason
+					finalReason,
+					true
 				);
 			} catch (e) {
 				console.error("trust_score sync:", e);
@@ -1102,10 +1103,11 @@ const updateOrder = async (req, res, next) => {
 		) {
 			try {
 				await syncTrustAfterOrderStatusChange(
-					updatedOrder.user_id,
+					order,
 					order.status,
 					status,
-					note
+					note,
+					true
 				);
 			} catch (e) {
 				console.error("trust_score sync (updateOrder):", e);
@@ -1326,7 +1328,7 @@ const cancelOrder = async (req, res, next) => {
 		}
 
 		try {
-			await syncTrustAfterOrderStatusChange(order.user_id, order.status, "Đã hủy", "Khách hàng tự hủy");
+			await syncTrustAfterOrderStatusChange(order, order.status, "Đã hủy", "Khách hàng tự hủy", false);
 		} catch (e) {
 			console.error("trust score sync err:", e);
 		}
@@ -1499,7 +1501,7 @@ const ghtkWebhook = async (req, res, next) => {
 			// Update Trust Score
 			try {
 				const { syncTrustAfterOrderStatusChange } = require("../utils/userTrust");
-				await syncTrustAfterOrderStatusChange(order.user_id, previousStatus, "Đã giao hàng", "Đồng bộ giao hàng tự động GHTK Webhook");
+				await syncTrustAfterOrderStatusChange(order, previousStatus, "Đã giao hàng", "Đồng bộ giao hàng tự động GHTK Webhook", false);
 			} catch (trustError) {
 				console.error("❌ [GHTK Webhook] Error syncing trust score on delivery:", trustError);
 			}
@@ -1557,7 +1559,7 @@ const ghtkWebhook = async (req, res, next) => {
 			// Update Trust Score
 			try {
 				const { syncTrustAfterOrderStatusChange } = require("../utils/userTrust");
-				await syncTrustAfterOrderStatusChange(order.user_id, previousStatus, "Đã hủy", orderPatch.reason);
+				await syncTrustAfterOrderStatusChange(order, previousStatus, "Đã hủy", orderPatch.reason, false);
 			} catch (trustError) {
 				console.error("❌ [GHTK Webhook] Error syncing trust score on cancellation:", trustError);
 			}
