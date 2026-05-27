@@ -35,7 +35,8 @@ const notifyAllUsers = async (title, body, type = "system", orderId = "", produc
                 await sendNotification(user.fcmToken, title, body, {
                     type: type,
                     order_id: orderId,
-                    product_id: productId
+                    product_id: productId,
+                    voucher_id: (type === "promotion" || type === "voucher") ? orderId : ""
                 });
             }
         });

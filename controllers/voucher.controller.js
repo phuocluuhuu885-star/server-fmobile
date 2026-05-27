@@ -127,7 +127,8 @@ const addVoucher = async (req, res, next) => {
 		notifyAllUsers(
 			"Ưu đãi mới từ FMobile!",
 			`Mã giảm giá "${obj.title}" vừa xuất hiện. Sử dụng ngay để nhận ưu đãi!`,
-			"promotion"
+			"promotion",
+			String(obj._id)
 		);
 
 		return res.status(200).json({ code: 200, message: "add successfully!" });
@@ -160,6 +161,20 @@ const deleteVoucher = async (req, res, next) => {
 	}
 };
 
+// [get] /api/voucher/detail/:id
+const detailVoucher = async (req, res, next) => {
+	try {
+		const { id } = req.params;
+		const voucher = await models.voucher.findById(id).populate("applicableProducts");
+		if (!voucher) {
+			return res.status(404).json({ code: 404, message: "Voucher not found" });
+		}
+		return res.status(200).json({ code: 200, data: voucher, message: "get voucher successfully!" });
+	} catch (error) {
+		return res.status(500).json({ code: 500, message: error.message });
+	}
+};
+
 module.exports = {
 	list,
 	addVoucher,
@@ -167,4 +182,5 @@ module.exports = {
 	deleteVoucher,
 	getVoucherByProduct,
 	getVouchersForCart,
+	detailVoucher,
 };

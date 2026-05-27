@@ -12,5 +12,6 @@ router.put("/edit/:id", middleware.checkToken, voucherController.editVoucher);
 router.delete("/delete/:id", middleware.checkToken, voucherController.deleteVoucher);
 router.get("/voucher-by-product/:productId", voucherController.getVoucherByProduct);
 router.post("/voucher-by-forcart", voucherController.getVouchersForCart);
+router.get("/detail/:id", voucherController.detailVoucher);
 
 module.exports = router;
